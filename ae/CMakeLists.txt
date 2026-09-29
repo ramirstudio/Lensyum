@@ -36,6 +36,11 @@ add_custom_command(
     VERBATIM
 )
 
+# Without the RC language CMake silently skips the .rc and the .aex ships with no PiPL, which
+# After Effects then ignores.
+enable_language(RC)
+set_source_files_properties("${PIPL_RC}" PROPERTIES GENERATED TRUE LANGUAGE RC)
+
 add_library(Lensyum SHARED
     LensyumAE.cpp
     LensyumParams.h
