@@ -1,0 +1,6 @@
+build/
+out/
+*.ppm
+*.pgm
+.vs/
+*.aex
