@@ -52,6 +52,11 @@ float ApertureShape::transmission(double x, double y) const {
         const double edge = lerp(polyR, 1.0, clampv(curvature, 0.0, 1.0));
         if (rho > edge) return 0.0f;
     }
+    if (lobes > 0 && lobeCount >= 2) {
+        const double phi = std::atan2(y, x) - rotationRad;
+        const double edge = 1.0 - 0.22 * clampv(lobes, 0.0, 1.0) * (0.5 - 0.5 * std::cos(lobeCount * phi));
+        if (rho > edge) return 0.0f;
+    }
     if (obstruction > 0 && rho < obstruction) return 0.0f;
 
     double t = 1.0;
@@ -85,7 +90,7 @@ float ApertureShape::transmission(double x, double y) const {
 
 void ApertureShape::hashInto(Hasher& h) const {
     h.add(blades); h.add(curvature); h.add(rotationRad); h.add(obstruction);
-    h.add(onion); h.add(onionFreq); h.add(texture); h.add(textureScale); h.add(textureSeed);
+    h.add(lobes); h.add(lobeCount); h.add(onion); h.add(onionFreq); h.add(texture); h.add(textureScale); h.add(textureSeed);
     h.add(maskW); h.add(maskH);
     if (!mask.empty()) h.bytes(mask.data(), mask.size() * sizeof(float));
 }

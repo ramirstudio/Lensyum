@@ -4,6 +4,10 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <cstdint>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 namespace lensyum {
 
@@ -102,6 +106,9 @@ struct LevelBuffer {
 
 void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
     RenderSettings rs = rsIn;
+    const bool lzTime = std::getenv("LENSYUM_TIME") != nullptr;
+    auto lzT0 = std::chrono::steady_clock::now();
+    auto lzMark = [&](const char* what) { if (!lzTime) return; auto t = std::chrono::steady_clock::now(); std::fprintf(stderr, "  %-10s %.3fs\n", what, std::chrono::duration<double>(t - lzT0).count()); lzT0 = t; };
     const int W = srcIn.width, H = srcIn.height;
     dst.resize(W, H);
     if (W <= 0 || H <= 0) return;
@@ -141,13 +148,20 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
     }
     const Image& src = *srcP;
 
+    lzMark("start");
     std::shared_ptr<const PsfAtlas> atlasP = acquirePsfAtlas(rs.optics);
     const PsfAtlas& A = *atlasP;
     std::shared_ptr<const ApertureTexture> apP = acquireApertureTexture(rs.optics.aperture);
     const ApertureTexture& ap = *apP;
 
+    lzMark("atlas+iris");
     // ---- Per-pixel source data -------------------------------------------------------
-    std::vector<Source> srcs(static_cast<size_t>(W) * H);
+    // Large per-frame buffers live per thread and are reused across frames (After Effects keeps
+    // its render threads), so pages are not faulted in again on every render.
+    thread_local std::vector<Source> srcsTL;
+    thread_local std::vector<float> accTL, outTL;
+    srcsTL.resize(static_cast<size_t>(W) * H);
+    std::vector<Source>& srcs = srcsTL;
     const DefocusSettings& df = rs.defocus;
     const bool useDepth = df.mode == DefocusSettings::kDepthMap && df.depth && df.depthW > 0 && df.depthH > 0;
     std::unique_ptr<DepthToBlur> d2b;
@@ -157,6 +171,8 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
             focus = depthToDistance(df, sampleDepth(df, df.focusPointX / fm.layerW, df.focusPointY / fm.layerH));
         d2b = std::make_unique<DepthToBlur>(rs.optics, focus, df.nearMm, df.farMm);
     }
+    const double fcPx = rs.fieldCurvatureMm * A.marginalSlope * A.pxPerMm;
+    const double halfDiagFc = 0.5 * std::hypot(fm.layerW * par, fm.layerH);
     const double thr = rs.highlights.threshold;
     const double gain = std::max(rs.highlights.gain, 0.0);
     const double hiRange = std::max(1.0 - thr, 0.02);
@@ -175,10 +191,13 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
             }
             S.highlight = L >= thr;
 
+            const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
             double s = df.amountPx;
-            if (useDepth) {
-                const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
-                s = (*d2b)(depthToDistance(df, sampleDepth(df, lx / fm.layerW, ly / fm.layerH)));
+            if (useDepth) s = (*d2b)(depthToDistance(df, sampleDepth(df, lx / fm.layerW, ly / fm.layerH)));
+            if (fcPx != 0.0) {
+                // Field curvature: the plane of focus bows, corners defocus by fieldCurvatureMm.
+                const double h2 = (((lx - fm.centerX) * par) * ((lx - fm.centerX) * par) + (ly - fm.centerY) * (ly - fm.centerY)) / (halfDiagFc * halfDiagFc);
+                s += fcPx * std::min(h2, 1.5);
             }
             s *= df.scale;
             S.s = static_cast<float>(clampv(s, -maxBlur, maxBlur));
@@ -201,50 +220,120 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         return;
     }
 
+    lzMark("sources");
     // ---- Depth slices -------------------------------------------------------------------
     const float dsMax = static_cast<float>(std::max(dsx, dsy));
     auto g = [](double s) { return (s < 0 ? -1.0 : 1.0) * std::log2(1.0 + std::fabs(s) / 1.5); };
-    double gmin = 1e30, gmax = -1e30;
-    for (const Source& S : srcs) { const double v = g(S.s); gmin = std::min(gmin, v); gmax = std::max(gmax, v); }
+    std::vector<float> rowMin(H), rowMax(H);
+    parallelFor(H, [&](int y) {
+        float lo = 1e30f, hi = -1e30f;
+        for (int x = 0; x < W; ++x) {
+            const float v = static_cast<float>(g(srcs[static_cast<size_t>(y) * W + x].s));
+            lo = std::min(lo, v); hi = std::max(hi, v);
+        }
+        rowMin[y] = lo; rowMax[y] = hi;
+    });
+    const double gmin = *std::min_element(rowMin.begin(), rowMin.end());
+    const double gmax = *std::max_element(rowMax.begin(), rowMax.end());
     int K = std::max(1, rs.layers);
     if (gmax - gmin < 1e-4) K = 1;
     else K = std::min(K, 1 + static_cast<int>(std::ceil((gmax - gmin) / 0.08)));
 
+    // Slice and level of every pixel (parallel), then counted buckets filled in raster order.
     const QualityProfile qp = qualityProfile(rs.optics.quality);
-    std::vector<std::vector<std::vector<Entry>>> lists(K, std::vector<std::vector<Entry>>(kMaxLevel + 1));
-    std::vector<std::vector<float>> listMaxR(K, std::vector<float>(kMaxLevel + 1, 0.0f));
-    for (int y = 0; y < H; ++y)
+    const int buckets = K * (kMaxLevel + 1);
+    std::vector<uint16_t> bucketOf(static_cast<size_t>(W) * H);
+    parallelFor(H, [&](int y) {
         for (int x = 0; x < W; ++x) {
             const Source& S = srcs[static_cast<size_t>(y) * W + x];
             const double rBuf = std::fabs(S.s) * dsMax;
             const double cap = S.highlight ? qp.levelCapHigh : qp.levelCap;
             int level = 0;
             if (rBuf > cap) level = std::min(kMaxLevel, static_cast<int>(std::ceil(std::log2(rBuf / cap))));
-            double lc = K > 1 ? (g(S.s) - gmin) / (gmax - gmin) * (K - 1) : 0.0;
-            const int k0 = std::min(static_cast<int>(lc), K - 1);
-            const float t = static_cast<float>(lc - k0);
-            auto push = [&](int k, float w) {
-                lists[k][level].push_back({x, y, w});
-                listMaxR[k][level] = std::max(listMaxR[k][level], std::fabs(S.s));
-            };
-            // Dithered slice assignment: avoids banding between slices without splatting twice.
-            const bool up = k0 + 1 < K && hashUnit(hash2(x, y, 0x2Fu)) < t;
-            push(up ? k0 + 1 : k0, 1.0f);
+            int k = 0;
+            if (K > 1) {
+                const double lc = (g(S.s) - gmin) / (gmax - gmin) * (K - 1);
+                const int k0 = std::min(static_cast<int>(lc), K - 1);
+                // Dithered slice assignment: avoids banding between slices without splatting twice.
+                k = (k0 + 1 < K && hashUnit(hash2(x, y, 0x2Fu)) < lc - k0) ? k0 + 1 : k0;
+            }
+            bucketOf[static_cast<size_t>(y) * W + x] = static_cast<uint16_t>(k * (kMaxLevel + 1) + level);
+        }
+    });
+    lzMark("assign");
+    std::vector<size_t> counts(buckets, 0);
+    std::vector<float> bucketMaxR(buckets, 0.0f);
+    for (size_t i = 0; i < bucketOf.size(); ++i) {
+        ++counts[bucketOf[i]];
+        bucketMaxR[bucketOf[i]] = std::max(bucketMaxR[bucketOf[i]], std::fabs(srcs[i].s));
+    }
+    std::vector<std::vector<std::vector<Entry>>> lists(K, std::vector<std::vector<Entry>>(kMaxLevel + 1));
+    std::vector<std::vector<float>> listMaxR(K, std::vector<float>(kMaxLevel + 1, 0.0f));
+    for (int bk = 0; bk < buckets; ++bk) {
+        lists[bk / (kMaxLevel + 1)][bk % (kMaxLevel + 1)].reserve(counts[bk]);
+        listMaxR[bk / (kMaxLevel + 1)][bk % (kMaxLevel + 1)] = bucketMaxR[bk];
+    }
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const int bk = bucketOf[static_cast<size_t>(y) * W + x];
+            lists[bk / (kMaxLevel + 1)][bk % (kMaxLevel + 1)].push_back({x, y, 1.0f});
         }
 
+    lzMark("lists");
     // ---- Buffers ----------------------------------------------------------------------------
     std::vector<LevelBuffer> levels(kMaxLevel + 1);
     for (int L = 0; L <= kMaxLevel; ++L) {
         levels[L].w = (W + (1 << L) - 1) >> L;
         levels[L].h = (H + (1 << L) - 1) >> L;
     }
+    levels[0].acc.swap(accTL);
     levels[0].acc.assign(static_cast<size_t>(W) * H * kChannels, 0.0f);
-    std::vector<float> out(static_cast<size_t>(W) * H * kChannels, 0.0f);
+    outTL.assign(static_cast<size_t>(W) * H * kChannels, 0.0f);
+    std::vector<float>& out = outTL;
 
     const double halfDiag = 0.5 * std::hypot(fm.layerW * par, fm.layerH);
     const double U = A.extent;
     const float squeeze = static_cast<float>(std::max(rs.squeeze, 0.1));
 
+    lzMark("prep");
+    // ---- Per-render kernel bank ----------------------------------------------------------
+    // Light passing the iris for every atlas texel. With a round iris the result does not depend
+    // on the field angle, so kernels are baked once (3 floats per texel) and the inner loop is a
+    // plain bilinear fetch. Otherwise the iris is applied per pixel and only the normalising mass
+    // (measured with the iris at the reference angle) is precomputed.
+    const bool irisRound = rs.optics.aperture.isRound();
+    const size_t mipTotal = A.mips.size();
+    std::vector<size_t> bakedOff(mipTotal, 0);
+    size_t bakedSize = 0;
+    for (size_t i = 0; i < mipTotal; ++i) { bakedOff[i] = bakedSize; bakedSize += static_cast<size_t>(A.mips[i].res) * A.mips[i].res * 3; }
+    std::vector<float> baked(irisRound ? bakedSize : 0);
+    std::vector<float> mass(mipTotal * 3, 0.0f);
+    parallelFor(static_cast<int>(mipTotal / A.mipCount), [&](int entry) {
+        for (int m = 0; m < A.mipCount; ++m) {
+            const size_t mi = static_cast<size_t>(entry) * A.mipCount + m;
+            const PsfAtlas::Mip& mp = A.mips[mi];
+            const float* T0 = A.data(mp);
+            float* B = irisRound ? baked.data() + bakedOff[mi] : nullptr;
+            double sum[3] = {0, 0, 0};
+            for (int t = 0; t < mp.res * mp.res; ++t) {
+                const float* v = T0 + static_cast<size_t>(t) * TF;
+                const float light = v[0] + v[1] + v[2];
+                float tr = 0.0f;
+                if (light > 1e-12f) {
+                    const float px = v[3] / light, py = v[4] / light;
+                    tr = irisRound ? ap.sample(std::sqrt(px * px + py * py), 0.0) : ap.sample(kIrisSign * px, -kIrisSign * py);
+                }
+                for (int c = 0; c < 3; ++c) {
+                    const float w = v[c] * tr;
+                    if (B) B[t * 3 + c] = w;
+                    sum[c] += w;
+                }
+            }
+            for (int c = 0; c < 3; ++c) mass[mi * 3 + c] = static_cast<float>(sum[c]);
+        }
+    });
+
+    lzMark("bank");
     // ---- Splat one depth slice at one level ---------------------------------------------
     auto splatList = [&](const std::vector<Splat>& list, float maxR, int L) {
         LevelBuffer& lb = levels[L];
@@ -291,11 +380,23 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 const double texPx = 2.0 * U * R / (A.res * std::max(ax, ay));
                 int m = 0;
                 while (m + 1 < A.mipCount && texPx * (1 << m) < 0.7) ++m;
-                const PsfAtlas::Mip& mip = A.mip(fi, di, m);
+                const size_t mi = (static_cast<size_t>(fi) * A.defocusCount + di) * A.mipCount + m;
+                const PsfAtlas::Mip& mip = A.mips[mi];
                 const float* T = A.data(mip);
+                const float* B = irisRound ? baked.data() + bakedOff[mi] : nullptr;
+                const float* M = &mass[mi * 3];
                 const int res = mip.res;
                 const double du = 2.0 * U / res;
                 const double invR = 1.0 / R;
+
+                auto deposit = [&]() {
+                    // Nothing of this entry passes the iris: keep the energy as a point.
+                    const int px = std::min(static_cast<int>(cxL), lb.w - 1), py = static_cast<int>(cyL);
+                    if (py < by0 || py >= by1) return;
+                    float* a = &lb.acc[(static_cast<size_t>(py) * lb.w + px) * kChannels];
+                    a[0] += S.c[0]; a[1] += S.c[1]; a[2] += S.c[2]; a[3] += S.c[3]; a[4] += S.w;
+                };
+                if (M[1] <= 1e-12f) { deposit(); continue; }
 
                 const double hx = mip.maxU * R / ax, hy = mip.maxU * R / ay;
                 const int fx0 = std::max(0, static_cast<int>(std::floor(cxL - hx)));
@@ -312,17 +413,29 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                     const double qy = -pxu * ex + pyu * ey;
                     return ap.sample(kIrisSign * qx, -kIrisSign * qy);
                 };
-                auto texel = [&](const float* T0, int r, double tx, double ty, float* w3) {
+                auto kernel = [&](int i, int j, float* w3) {
+                    const double qx = ax * (i + 0.5 - cxL), qy = ay * (j + 0.5 - cyL);
+                    const double ux = (qx * ey - qy * ex) * invR, uy = (qx * ex + qy * ey) * invR;
+                    const double tx = (ux + U) / du - 0.5, ty = (uy + U) / du - 0.5;
+                    if (tx < 0 || ty < 0 || tx >= res - 1 || ty >= res - 1) { w3[0] = w3[1] = w3[2] = 0; return; }
                     const int x0 = static_cast<int>(tx), y0 = static_cast<int>(ty);
                     const float fx = static_cast<float>(tx - x0), fy = static_cast<float>(ty - y0);
-                    const float* t00 = T0 + (static_cast<size_t>(y0) * r + x0) * TF;
-                    const float* t01 = t00 + TF;
-                    const float* t10 = t00 + static_cast<size_t>(r) * TF;
-                    const float* t11 = t10 + TF;
+                    if (B) {
+                        const float* t00 = B + (static_cast<size_t>(y0) * res + x0) * 3;
+                        const float* t10 = t00 + static_cast<size_t>(res) * 3;
+                        for (int c = 0; c < 3; ++c) {
+                            const float a = t00[c] + (t00[c + 3] - t00[c]) * fx;
+                            const float b = t10[c] + (t10[c + 3] - t10[c]) * fx;
+                            w3[c] = a + (b - a) * fy;
+                        }
+                        return;
+                    }
+                    const float* t00 = T + (static_cast<size_t>(y0) * res + x0) * TF;
+                    const float* t10 = t00 + static_cast<size_t>(res) * TF;
                     float v[TF];
                     for (int c = 0; c < TF; ++c) {
-                        const float a = t00[c] + (t01[c] - t00[c]) * fx;
-                        const float b = t10[c] + (t11[c] - t10[c]) * fx;
+                        const float a = t00[c] + (t00[c + TF] - t00[c]) * fx;
+                        const float b = t10[c] + (t10[c + TF] - t10[c]) * fx;
                         v[c] = a + (b - a) * fy;
                     }
                     const float light = v[0] + v[1] + v[2];
@@ -330,16 +443,9 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                     const float t = iris(v[3] / light, v[4] / light);
                     w3[0] = v[0] * t; w3[1] = v[1] * t; w3[2] = v[2] * t;
                 };
-                auto kernel = [&](int i, int j, float* w3) {
-                    const double qx = ax * (i + 0.5 - cxL), qy = ay * (j + 0.5 - cyL);
-                    const double ux = (qx * ey - qy * ex) * invR, uy = (qx * ex + qy * ey) * invR;
-                    const double tx = (ux + U) / du - 0.5, ty = (uy + U) / du - 0.5;
-                    if (tx < 0 || ty < 0 || tx >= res - 1 || ty >= res - 1) { w3[0] = w3[1] = w3[2] = 0; return; }
-                    texel(T, res, tx, ty, w3);
-                };
 
-                // Normalisation: exact for small footprints; otherwise the light passing the iris,
-                // measured on a coarse mip, against the area one texel covers in output pixels.
+                // Normalisation: exact for small footprints; otherwise the precomputed light passing
+                // the iris against the area one texel covers in output pixels.
                 float norm[3];
                 const int fw = fx1 - fx0 + 1, fh = fy1 - fy0 + 1;
                 if (fw * fh <= 64) {
@@ -347,25 +453,11 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                     float w3[3];
                     for (int j = fy0; j <= fy1; ++j)
                         for (int i = fx0; i <= fx1; ++i) { kernel(i, j, w3); sum[0] += w3[0]; sum[1] += w3[1]; sum[2] += w3[2]; }
-                    if (sum[1] <= 1e-12) continue;
+                    if (sum[1] <= 1e-12) { deposit(); continue; }
                     for (int c = 0; c < 3; ++c) norm[c] = sum[c] > 1e-12 ? static_cast<float>(1.0 / sum[c]) : 0.0f;
                 } else {
-                    int mc = m;
-                    while (mc + 1 < A.mipCount && A.mip(fi, di, mc).res > 24) ++mc;
-                    const PsfAtlas::Mip& cm = A.mip(fi, di, mc);
-                    const float* TC = A.data(cm);
-                    double mass[3] = {0, 0, 0};
-                    for (int y = 0; y < cm.res; ++y)
-                        for (int x = 0; x < cm.res; ++x) {
-                            const float* v = TC + (static_cast<size_t>(y) * cm.res + x) * TF;
-                            const float light = v[0] + v[1] + v[2];
-                            if (light <= 1e-12f) continue;
-                            const float t = iris(v[3] / light, v[4] / light);
-                            mass[0] += v[0] * t; mass[1] += v[1] * t; mass[2] += v[2] * t;
-                        }
-                    if (mass[1] <= 1e-12) continue;
                     const double area = ax * ay * invR * invR / (du * du);
-                    for (int c = 0; c < 3; ++c) norm[c] = mass[c] > 1e-12 ? static_cast<float>(area / mass[c]) : 0.0f;
+                    for (int c = 0; c < 3; ++c) norm[c] = M[c] > 1e-12f ? static_cast<float>(area / M[c]) : 0.0f;
                 }
                 const float cr = S.c[0] * norm[0], cg = S.c[1] * norm[1], cb = S.c[2] * norm[2];
                 const float ca = S.c[3] * norm[1], cw = S.w * norm[1];
@@ -394,7 +486,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         for (int L = 0; L <= kMaxLevel; ++L) any = any || !lists[k][L].empty();
         if (!any) continue;
 
-        std::fill(levels[0].acc.begin(), levels[0].acc.end(), 0.0f);
+        // levels[0] is cleared row by row as each slice is composited.
         for (int L = 1; L <= kMaxLevel; ++L) {
             levels[L].used = !lists[k][L].empty();
             if (levels[L].used) levels[L].acc.assign(static_cast<size_t>(levels[L].w) * levels[L].h * kChannels, 0.0f);
@@ -481,10 +573,13 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 o[2] = s[2] + (1.0f - a) * o[2];
                 o[3] = s[3] + (1.0f - a) * o[3];
                 o[4] = cov + (1.0f - cov) * o[4];
+                s[0] = s[1] = s[2] = s[3] = s[4] = 0.0f;
             }
         });
     }
 
+    accTL.swap(levels[0].acc);
+    lzMark("slices");
     // Renormalise by geometric coverage: fills the gaps left where hidden background would be.
     parallelFor(H, [&](int y) {
         for (int x = 0; x < W; ++x) {

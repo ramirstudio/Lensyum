@@ -12,17 +12,21 @@ La sfocatura può essere uniforme (in pixel) oppure calcolata da una mappa di pr
 
 ## Controlli
 
-Lens: modello di obiettivo, focale, diaframma, formato del sensore.
+Camera: preset dell'obiettivo (ogni preset ha la sua focale), formato del sensore (full frame, Super 35, APS-C, Micro 4/3, Super 16, Large Format 65 o larghezza personalizzata), diaframma. Se chiedi un diaframma più aperto di quello massimo della lente, viene usato il massimo.
 
 Focus: sorgente della sfocatura (uniforme o mappa di profondità), layer di profondità con polarità e codifica (distanza lineare o disparità 1/z, il formato tipico delle mappe generate da AI), distanze near/far in metri, distanza di messa a fuoco oppure messa a fuoco su un punto campionato dalla mappa, scala della sfocatura.
 
 Aperture: numero di lamelle, curvatura, rotazione, ostruzione centrale (bokeh a ciambella degli obiettivi catadiottrici), layer da usare come apertura personalizzata.
 
-Lens Character: cat-eye (vignettatura meccanica), aberrazione cromatica, sferica, coma, astigmatismo (swirl), squeeze anamorfico, onion rings, texture del vetro con scala e seed.
+Creative: Impression (positivo bordo netto e luminoso, negativo disco morbido), Coma, Astigmatism in millimetri di spostamento del fuoco tra direzione radiale e tangenziale all'angolo, Field Curvature in millimetri (gli angoli vanno fuori fuoco), Zonal Ripple con densità (anelli concentrici), Lobes con numero di lobi, aberrazione cromatica, Cat-Eye (vignettatura meccanica), squeeze anamorfico, texture del vetro con scala e seed.
 
 Highlights: soglia e boost delle alte luci prima della sfocatura, per recuperare la luminosità che il footage a 8/16 bit ha perso nel clipping.
 
 Render: qualità, raggio massimo, numero di fette di profondità, spazio di lavoro (Auto decodifica sRGB a 8/16 bpc e considera lineare il 32 bpc), centro ottico, vista (risultato, mappa di sfocatura, griglia di bokeh per controllare la lente su tutto il fotogramma).
+
+## Obiettivi
+
+Double-Gauss 50 f/2 e Wide 22 f/2.8 sono prescrizioni pubblicate (brevetto Tronnier e progetto Nakamura, come tabulati in Smith, "Modern Lens Design"). Double-Gauss 58 f/2.2 Swirl usa lo stesso vetro con il gruppo posteriore più chiuso dalla montatura, per un cat-eye e uno swirl più forti. Cooke Triplet 50 f/2.8, Tessar 50 f/3.5 e Petzval 85 f/2 sono progetti Lensyum nelle forme classiche: vetri di catalogo, curvature ottimizzate su raggi reali per il campo del full frame, diametri utili ricavati dai fasci tracciati. Il Wide 22 copre Super 35 e APS-C; su full frame gli angoli cadono molto.
 
 ## Compilare il plugin su Windows
 
@@ -48,8 +52,8 @@ build/lensyum_cli scene scena.ppm focus=3 N=2 gain=8
 build/lensyum_cli image foto.ppm out.ppm depth=profondita.pgm focus=2.5
 ```
 
-Le opzioni sono coppie `chiave=valore` (`lens`, `f`, `N`, `focus` in metri, `sensor`, `blades`, `curv`, `rot`, `obst`, `mask=file.pgm`, `onion`, `texture`, `cateye`, `ca`, `sa`, `coma`, `astig`, `squeeze`, `gain`, `thr`, `amount`, `quality`, `maxblur`, `layers`, `view`).
+Le opzioni sono coppie `chiave=valore` (`lens`, `N`, `focus` in metri, `sensor`, `blades`, `curv`, `rot`, `obst`, `mask=file.pgm`, `onion`, `lobes`, `lobecount`, `texture`, `cateye`, `ca`, `imp`, `coma`, `astig` e `fc` in mm, `squeeze`, `gain`, `thr`, `amount`, `quality`, `maxblur`, `layers`, `view`).
 
 ## Stato
 
-Fase 1: motore di riferimento su CPU e plugin AE. Il wrapper è scritto sull'API dell'SDK ufficiale ma non è ancora stato compilato con l'SDK vero, per cui la prima build su Windows può richiedere qualche ritocco. La libreria di obiettivi per ora contiene il Double-Gauss 50 mm f/2 (brevetto Tronnier). Prossimi passi: altri schemi ottici (Tessar, Biotar, Petzval, grandangolo, anamorfico), porting del renderer su CUDA per l'anteprima interattiva, interfaccia dinamica che nasconde i controlli non pertinenti.
+Motore su CPU, multi-thread. A 1080p su 4 core il tracciamento della lente richiede circa 0,6 s (solo quando cambiano obiettivo, diaframma, formato o i controlli Creative che agiscono sui raggi) e il render di un fotogramma da 0,3 a 0,8 s. Prossimi passi: porting su GPU (CUDA) per l'anteprima interattiva, layer extra a profondità propria, filtro frontale (sporco, paraluce) e i layer di pioggia e glitter.

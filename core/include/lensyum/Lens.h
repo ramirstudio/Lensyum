@@ -21,6 +21,7 @@ struct Surface {
 
 struct LensPrescription {
     const char* name;
+    double focalMm; // focal length the preset is used at
     std::vector<Surface> surfaces;
 };
 

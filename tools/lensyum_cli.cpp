@@ -69,7 +69,7 @@ struct Args {
 void applyArgs(const Args& a, RenderSettings& rs) {
     OpticsSettings& o = rs.optics;
     o.lensPreset = static_cast<int>(a.num("lens", 0));
-    o.lens.focalLengthMm = a.num("f", 50);
+    o.lens.focalLengthMm = a.num("f", lensPreset(o.lensPreset).focalMm);
     o.lens.fNumber = a.num("N", 2.0);
     o.lens.focusDistanceMm = a.num("focus", 3.0) * 1000.0;
     o.lens.dispersion = a.num("ca", 1.0);
@@ -84,9 +84,12 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     o.aperture.texture = a.num("texture", 0.0);
     o.aperture.textureScale = a.num("texscale", 1.0);
     o.aperture.textureSeed = static_cast<int>(a.num("seed", 0));
-    o.spherical = a.num("sa", 0.0);
+    o.impression = a.num("imp", 0.0);
     o.coma = a.num("coma", 0.0);
-    o.astigmatism = a.num("astig", 0.0);
+    o.astigmatismMm = a.num("astig", 0.0);
+    o.aperture.lobes = a.num("lobes", 0.0);
+    o.aperture.lobeCount = static_cast<int>(a.num("lobecount", 5));
+    rs.fieldCurvatureMm = a.num("fc", 0.0);
     o.maxBlurPx = a.num("maxblur", 150.0);
     o.quality = static_cast<int>(a.num("quality", 1));
     rs.squeeze = a.num("squeeze", 1.0);
@@ -171,6 +174,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < lensPresetCount(); ++i) {
             LensSettings s;
             s.fNumber = 0.5;
+            s.focalLengthMm = lensPreset(i).focalMm;
             const LensSystem L(lensPreset(i), s);
             std::printf("%d  %-28s  EFL %.2f mm  widest f/%.2f  marginal slope %.3f\n", i, lensPreset(i).name, L.efl(), L.openFNumber(),
                         L.marginalSlope());

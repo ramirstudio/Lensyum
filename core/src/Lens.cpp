@@ -27,8 +27,8 @@ std::vector<LensPrescription> makePresets() {
 
     // Double-Gauss f/2, 22 deg half field (Tronnier, US 2,673,491 as tabulated in
     // Smith, "Modern Lens Design"), scaled to 50 mm. Glass Abbe numbers assigned from the
-    // catalogue glasses matching each index.
-    v.push_back({"Double-Gauss 50 f/2", {
+    // catalogue glasses matching each index. Strong cat-eye at the full-frame corners.
+    const std::vector<Surface> dgauss = {
         {  29.475, 3.760, 1.670, 47.2, 25.2, false},
         {  84.830, 0.120, 1.000,  0.0, 25.2, false},
         {  19.275, 4.025, 1.670, 47.2, 23.0, false},
@@ -40,6 +40,72 @@ std::vector<LensPrescription> makePresets() {
         { -20.385, 0.190, 1.000,  0.0, 20.0, false},
         { 437.065, 3.220, 1.717, 47.9, 20.0, false},
         { -39.730, 0.000, 1.000,  0.0, 20.0, false},
+    };
+    v.push_back({"Double-Gauss 50 f/2", 50.0, dgauss});
+
+    // Same glass in a tighter barrel at 58 mm: the outer groups are stopped down by their mounts,
+    // the way the classic Biotar-derived 58 mm lenses are, which gives the swirling background.
+    {
+        std::vector<Surface> s = dgauss;
+        for (size_t i : {7u, 8u, 9u, 10u}) s[i].aperture *= 0.9;
+        v.push_back({"Double-Gauss 58 f/2.2 Swirl", 58.0, s});
+    }
+
+    // Petzval portrait 85 mm f/2.2. Lensyum design in the Petzval form (cemented front achromat,
+    // air-spaced rear pair), optimised for the centre: sharp in the middle, strong field curvature
+    // and astigmatism towards the edges, which is where the swirl comes from.
+    v.push_back({"Petzval 85 f/2.2", 85.0, {
+        {   52.177,   7.607, 1.5168, 64.2,  43.73, false},
+        {  -44.400,   2.608, 1.6200, 36.3,  38.54, false},
+        { -286.619,  15.213, 1.0000,  0.0,  38.22, false},
+        {    0.000,  21.733, 1.0000,  0.0,  42.50, true },
+        {  137.462,   2.608, 1.6200, 36.3,  34.25, false},
+        {   28.595,   1.304, 1.0000,  0.0,  33.26, false},
+        {   31.835,   5.977, 1.5168, 64.2,  33.95, false},
+        { -108.795,   0.000, 1.0000,  0.0,  33.95, false},
+    }});
+
+    // Cooke triplet 50 mm f/2.8. Lensyum design in the classic Taylor form (crown / flint / crown,
+    // SK16 and F4 type glass), curvatures optimised on real rays over the full-frame field.
+    v.push_back({"Cooke Triplet 50 f/2.8", 50.0, {
+        {  20.592, 3.984, 1.6204, 60.3, 19.76, false},
+        {5924.111, 4.979, 1.0000,  0.0, 18.95, false},
+        { -31.497, 1.195, 1.6165, 36.6, 15.50, false},
+        {  20.552, 1.992, 1.0000,  0.0, 14.64, false},
+        {   0.000, 2.988, 1.0000,  0.0, 14.33, true },
+        {  72.369, 3.486, 1.6204, 60.3, 16.10, false},
+        { -23.640, 0.000, 1.0000,  0.0, 16.37, false},
+    }});
+
+    // Tessar 50 mm f/3.5. Lensyum design in the Tessar form (crown, flint, stop, cemented rear
+    // doublet), optimised on real rays over the full-frame field.
+    v.push_back({"Tessar 50 f/3.5", 50.0, {
+        {   15.291,   3.154, 1.6204, 60.3,  14.70, false},
+        { -990.627,   2.041, 1.0000,  0.0,  14.15, false},
+        {  -36.052,   0.928, 1.5814, 40.9,  13.12, false},
+        {   13.577,   1.484, 1.0000,  0.0,  12.35, false},
+        {    0.000,   2.412, 1.0000,  0.0,  12.01, true },
+        { -295.210,   0.928, 1.5481, 45.8,  12.73, false},
+        {   13.636,   3.339, 1.6204, 60.3,  13.03, false},
+        {  -21.864,   0.000, 1.0000,  0.0,  13.08, false},
+    }});
+
+    // Wide-angle f/2.8 (Nakamura, as tabulated in Smith, "Modern Lens Design"), 22 mm.
+    // Covers Super 35 / APS-C; on full frame the corners fall off hard.
+    v.push_back({"Wide 22 f/2.8", 22.0, {
+        {  35.98738, 1.21638, 1.540, 51.0, 23.716, false},
+        {  11.69718, 9.99570, 1.000,  0.0, 17.996, false},
+        {  13.08714, 5.12622, 1.772, 49.6, 12.364, false},
+        { -22.63294, 1.76924, 1.617, 36.6,  9.812, false},
+        {  71.05802, 0.81840, 1.000,  0.0,  9.152, false},
+        {   0.00000, 2.27766, 1.000,  0.0,  8.756, true },
+        {  -9.58584, 2.43254, 1.617, 36.6,  8.184, false},
+        { -11.28864, 0.11506, 1.000,  0.0,  9.152, false},
+        {-166.77650, 3.09606, 1.713, 53.8, 10.648, false},
+        {  -7.59110, 1.32682, 1.805, 25.4, 11.440, false},
+        { -16.76620, 3.98068, 1.000,  0.0, 12.276, false},
+        {  -7.70286, 1.21638, 1.617, 36.6, 13.420, false},
+        { -11.97328, 0.00000, 1.000,  0.0, 17.996, false},
     }});
 
     return v;

@@ -29,8 +29,9 @@ namespace {
 // Parameters
 // ------------------------------------------------------------------------------------
 
-const char* kSensorNames = "Full Frame (36 mm)|Super 35 (24.89 mm)|APS-C (23.6 mm)|Micro Four Thirds (17.3 mm)|Super 16 (12.52 mm)|Custom";
-const double kSensorWidths[] = {36.0, 24.89, 23.6, 17.3, 12.52};
+const char* kFormatNames = "Full Frame (36 mm)|Super 35 (24.89 mm)|APS-C (23.6 mm)|Micro Four Thirds (17.3 mm)|Super 16 (12.52 mm)|Large Format 65 (54.12 mm)|Custom";
+const double kFormatWidths[] = {36.0, 24.89, 23.6, 17.3, 12.52, 54.12};
+constexpr int kFormatCount = 7;
 
 const std::string& lensPopupString() {
     static const std::string s = [] {
@@ -48,19 +49,17 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ParamDef def;
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_TOPIC("Lens", ID_LENS_TOPIC);
+    PF_ADD_TOPIC("Camera", ID_CAMERA_TOPIC);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Lens", lensPresetCount(), 1, lensPopupString().c_str(), ID_LENS_PRESET);
+    PF_ADD_POPUP("Lens Preset", lensPresetCount(), 1, lensPopupString().c_str(), ID_LENS_PRESET);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Focal Length (mm)", 8, 600, 14, 200, 50, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_FOCAL_LENGTH);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("F-Stop", 0.7, 64, 1, 22, 2, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_FSTOP);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Sensor", 6, 1, kSensorNames, ID_SENSOR);
+    PF_ADD_POPUP("Format", kFormatCount, 1, kFormatNames, ID_FORMAT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Custom Sensor Width (mm)", 2, 100, 5, 70, 36, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_SENSOR_WIDTH);
     AEFX_CLR_STRUCT(def);
-    PF_END_TOPIC(ID_LENS_TOPIC_END);
+    PF_ADD_FLOAT_SLIDERX("F-Stop", 0.7, 64, 0.7, 22, 2.8, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_FSTOP);
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(ID_CAMERA_TOPIC_END);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Focus", ID_FOCUS_TOPIC);
@@ -105,23 +104,29 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_END_TOPIC(ID_APERTURE_TOPIC_END);
 
     AEFX_CLR_STRUCT(def);
-    PF_ADD_TOPIC("Lens Character", ID_CHAR_TOPIC);
+    PF_ADD_TOPIC("Creative", ID_CREATIVE_TOPIC);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Cat-Eye", 0, 200, 0, 200, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CATEYE);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Chromatic Aberration", 0, 1000, 0, 500, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CHROMATIC);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Spherical", -100, 100, -100, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_SPHERICAL);
+    PF_ADD_FLOAT_SLIDERX("Impression", -100, 100, -100, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_IMPRESSION);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Coma", -100, 100, -100, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_COMA);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Astigmatism (Swirl)", -100, 100, -100, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_ASTIGMATISM);
+    PF_ADD_FLOAT_SLIDERX("Astigmatism (mm)", -10, 10, -3, 3, 0, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_ASTIGMATISM);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Field Curvature (mm)", -10, 10, -2, 2, 0, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_FIELD_CURVATURE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Zonal Ripple", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_ZONAL_RIPPLE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Ripple Density", 1, 30, 1, 20, 6, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_RIPPLE_DENSITY);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Lobes", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_LOBES);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_SLIDER("Lobe Count", 2, 12, 2, 12, 5, ID_LOBE_COUNT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Chromatic Aberration", 0, 1000, 0, 500, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CHROMATIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Cat-Eye", 0, 200, 0, 200, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CATEYE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Anamorphic Squeeze", 1, 3, 1, 2.5, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_SQUEEZE);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Onion Rings", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_ONION);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Onion Ring Density", 1, 30, 1, 20, 6, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_ONION_FREQ);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Glass Texture", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_TEXTURE);
     AEFX_CLR_STRUCT(def);
@@ -129,7 +134,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Texture Seed", 0, 10000, 0, 100, 0, ID_TEXTURE_SEED);
     AEFX_CLR_STRUCT(def);
-    PF_END_TOPIC(ID_CHAR_TOPIC_END);
+    PF_END_TOPIC(ID_CREATIVE_TOPIC_END);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Highlights", ID_HIGHLIGHT_TOPIC);
@@ -326,12 +331,21 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
     ParamReader pr(in_data);
     const double maxBlur = pr.num(P_MAX_BLUR);
     const double squeeze = std::max(pr.num(P_SQUEEZE), 1.0);
+    const bool uniform = pr.num(P_DEFOCUS_MODE) < 2;
+    const double amount = std::fabs(pr.num(P_DEFOCUS_AMOUNT)) * pr.num(P_DEFOCUS_SCALE) / 100.0;
+    const double fieldCurv = std::fabs(pr.num(P_FIELD_CURVATURE));
+    const int view = static_cast<int>(pr.num(P_VIEW));
     if (!pr.ok()) return pr.err();
 
+    // Pad the input only by the blur that is actually used: with uniform defocus that is the
+    // slider value, with a depth map the Max Blur Radius. Field curvature can add blur at the
+    // corners, so fall back to Max Blur when it is on.
+    double reach = maxBlur;
+    if (uniform && fieldCurv == 0.0 && view != 3) reach = std::min(maxBlur, amount);
     const double dsx = ratio(in_data->downsample_x), dsy = ratio(in_data->downsample_y);
-    // The PSF frame reaches ~2.5 blur radii from its centre in the worst case.
-    const A_long padX = static_cast<A_long>(std::ceil(maxBlur * 2.5 * dsx)) + 2;
-    const A_long padY = static_cast<A_long>(std::ceil(maxBlur * 2.5 * squeeze * dsy)) + 2;
+    // The PSF frame reaches ~1.8 blur radii from its centre (cat-eye and coma tails included).
+    const A_long padX = static_cast<A_long>(std::ceil(reach * 1.8 * dsx)) + 2;
+    const A_long padY = static_cast<A_long>(std::ceil(reach * 1.8 * squeeze * dsy)) + 2;
 
     PF_RenderRequest req = extra->input->output_request;
     PF_RenderRequest inReq = req;
@@ -408,10 +422,10 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         const double dsx = ratio(in_data->downsample_x), dsy = ratio(in_data->downsample_y);
 
         o.lensPreset = static_cast<int>(pr.num(P_LENS_PRESET)) - 1;
-        o.lens.focalLengthMm = pr.num(P_FOCAL_LENGTH);
+        o.lens.focalLengthMm = lensPreset(o.lensPreset).focalMm; // every preset keeps its own focal length
         o.lens.fNumber = pr.num(P_FSTOP);
-        const int sensor = static_cast<int>(pr.num(P_SENSOR));
-        o.sensorWidthMm = sensor >= 1 && sensor <= 5 ? kSensorWidths[sensor - 1] : pr.num(P_SENSOR_WIDTH);
+        const int format = static_cast<int>(pr.num(P_FORMAT));
+        o.sensorWidthMm = format >= 1 && format < kFormatCount ? kFormatWidths[format - 1] : pr.num(P_SENSOR_WIDTH);
 
         DefocusSettings& d = rs.defocus;
         d.mode = pr.num(P_DEFOCUS_MODE) >= 2 ? DefocusSettings::kDepthMap : DefocusSettings::kUniform;
@@ -438,12 +452,15 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
 
         o.lens.vignetting = pr.num(P_CATEYE) / 100.0;
         o.lens.dispersion = pr.num(P_CHROMATIC) / 100.0;
-        o.spherical = pr.num(P_SPHERICAL) / 100.0;
+        o.impression = pr.num(P_IMPRESSION) / 100.0;
         o.coma = pr.num(P_COMA) / 100.0;
-        o.astigmatism = pr.num(P_ASTIGMATISM) / 100.0;
+        o.astigmatismMm = pr.num(P_ASTIGMATISM);
+        rs.fieldCurvatureMm = pr.num(P_FIELD_CURVATURE);
         rs.squeeze = pr.num(P_SQUEEZE);
-        a.onion = pr.num(P_ONION) / 100.0;
-        a.onionFreq = pr.num(P_ONION_FREQ);
+        a.onion = pr.num(P_ZONAL_RIPPLE) / 100.0;
+        a.onionFreq = pr.num(P_RIPPLE_DENSITY);
+        a.lobes = pr.num(P_LOBES) / 100.0;
+        a.lobeCount = static_cast<int>(pr.num(P_LOBE_COUNT));
         a.texture = pr.num(P_TEXTURE) / 100.0;
         a.textureScale = pr.num(P_TEXTURE_SCALE) / 100.0;
         a.textureSeed = static_cast<int>(pr.num(P_TEXTURE_SEED));

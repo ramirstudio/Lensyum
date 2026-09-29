@@ -11,10 +11,10 @@ namespace lensyum {
 
 QualityProfile qualityProfile(int quality) {
     switch (clampv(quality, 0, 3)) {
-    case 0: return {128, 64, 12, 11, 4.0, 16.0};
-    case 1: return {224, 80, 14, 13, 8.0, 40.0};
-    case 2: return {320, 96, 18, 15, 12.0, 64.0};
-    default: return {448, 112, 20, 16, 24.0, 1e9};
+    case 0: return {112, 64, 10, 11, 4.0, 16.0};
+    case 1: return {160, 80, 12, 13, 8.0, 40.0};
+    case 2: return {240, 96, 16, 15, 12.0, 64.0};
+    default: return {360, 112, 20, 16, 24.0, 1e9};
     }
 }
 
@@ -23,7 +23,7 @@ uint64_t OpticsSettings::hash() const {
     h.add(lensPreset);
     h.add(lens.focalLengthMm); h.add(lens.fNumber); h.add(lens.focusDistanceMm);
     h.add(lens.dispersion); h.add(lens.vignetting);
-    h.add(spherical); h.add(coma); h.add(astigmatism);
+    h.add(impression); h.add(coma); h.add(astigmatismMm);
     h.add(sensorWidthMm); h.add(frameWidthPx); h.add(frameHeightPx); h.add(pixelAspect);
     h.add(maxBlurPx); h.add(quality);
     return h.h;
@@ -45,7 +45,8 @@ constexpr int TF = PsfAtlas::kTexelFloats;
 struct RaySample {
     float px, py, pz; // exit position
     float sx, sy;     // exit slope dx/dz, dy/dz
-    float ex, ey;     // artistic aberration offset per mm of |defocus|
+    float ex, ey;     // coma offset per mm of |defocus|
+    float ix, iy;     // impression offset per mm of signed defocus
     float ux, uy;     // pupil position in stop radii
     int band;         // spectral sample index
 };
@@ -138,9 +139,8 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
     const bool spectral = s.lens.dispersion > 1e-4;
     const int bands = spectral ? kSpectralSamples : 1;
     const double lambdaMono = 550.0;
-    const double sa = clampv(s.spherical, -1.0, 1.0);
+    const double imp = clampv(s.impression, -1.0, 1.0);
     const double cm = clampv(s.coma, -1.0, 1.0);
-    const double as = clampv(s.astigmatism, -1.0, 1.0);
 
     parallelFor(A.fieldCount, [&](int fi) {
         const double hN = A.fieldCount > 1 ? fi / double(A.fieldCount - 1) : 0.0;
@@ -191,9 +191,14 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
                 if (rho2 > 1.21) continue;
 
                 const double vx = g.d.x / g.d.z - csx, vy = g.d.y / g.d.z - csy;
-                const double ex = 0.35 * sa * rho2 * vx + 0.30 * cm * hN * k * (2 * gsx * gsy);
-                const double ey = 0.35 * sa * rho2 * vy + 0.30 * cm * hN * k * (gsx * gsx + 3 * gsy * gsy - 1.0)
-                                - 0.85 * as * hN * hN * vy;
+                // Coma: comet shape that points the same way on both sides of focus (|defocus|).
+                const double ex = 0.30 * cm * hN * k * (2 * gsx * gsy);
+                const double ey = 0.30 * cm * hN * k * (gsx * gsx + 3 * gsy * gsy - 1.0);
+                // Impression: zonal spherical term that squeezes (hard rim) or spreads (soft disc) the
+                // outer zone of the pupil identically in front of and behind focus (signed defocus).
+                // The rim itself (rho = 1) stays put so the disc keeps its size.
+                const double zone = 0.45 * imp * (1.0 - rho2);
+                const double ix = zone * vx, iy = zone * vy;
 
                 for (int b = 0; b < bands; ++b) {
                     Ray r{O, dir};
@@ -205,6 +210,7 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
                     samples.push_back({static_cast<float>(r.o.x), static_cast<float>(r.o.y), static_cast<float>(r.o.z),
                                        static_cast<float>(r.d.x / r.d.z), static_cast<float>(r.d.y / r.d.z),
                                        static_cast<float>(ex), static_cast<float>(ey),
+                                       static_cast<float>(ix), static_cast<float>(iy),
                                        static_cast<float>(gsx), static_cast<float>(gsy), b});
                 }
             }
@@ -214,15 +220,17 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
         std::vector<float> img(static_cast<size_t>(res) * res * TF);
         for (int d = 0; d < A.defocusCount; ++d) {
             const double delta = A.defocusPx[d] / (k * pxPerMm); // mm, >0 behind focus (background)
-            const double z = L.sensorZ() + delta;
-            const double cx = chief.o.x + (z - chief.o.z) * csx;
-            const double cy = chief.o.y + (z - chief.o.z) * csy;
+            // Astigmatism: the radial (y) and tangential (x) foci split by astigmatismMm at the corner.
+            const double split = 0.5 * s.astigmatismMm * hN * hN;
+            const double zx = L.sensorZ() + delta - split, zy = L.sensorZ() + delta + split;
+            const double cx = chief.o.x + (zx - chief.o.z) * csx;
+            const double cy = chief.o.y + (zy - chief.o.z) * csy;
             const double inv = 1.0 / (k * std::fabs(delta));
             const double ad = std::fabs(delta);
             std::fill(img.begin(), img.end(), 0.0f);
             for (const RaySample& rs : samples) {
-                const double px = rs.px + (z - rs.pz) * rs.sx + ad * rs.ex;
-                const double py = rs.py + (z - rs.pz) * rs.sy + ad * rs.ey;
+                const double px = rs.px + (zx - rs.pz) * rs.sx + ad * rs.ex + delta * rs.ix;
+                const double py = rs.py + (zy - rs.pz) * rs.sy + ad * rs.ey + delta * rs.iy;
                 const double tx = ((px - cx) * inv + A.extent) / du - 0.5;
                 const double ty = ((py - cy) * inv + A.extent) / du - 0.5;
                 const int x0 = static_cast<int>(std::floor(tx)), y0i = static_cast<int>(std::floor(ty));
@@ -266,6 +274,26 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
         }
     });
 
+    // Field positions the lens does not reach (a lens scaled or used beyond its image circle)
+    // borrow the last field that still passes light, so no pixel ever loses its energy.
+    for (int fi = 1; fi < A.fieldCount; ++fi) {
+        for (int d = 0; d < A.defocusCount; ++d) {
+            const size_t e = static_cast<size_t>(fi) * A.defocusCount + d;
+            const PsfAtlas::Mip& m0 = A.mips[e * A.mipCount];
+            const float* t = A.texels.data() + m0.offset;
+            double light = 0;
+            for (int i = 0; i < m0.res * m0.res; ++i) light += t[i * TF + 1];
+            if (light > 1e-6) continue;
+            const size_t src = static_cast<size_t>(fi - 1) * A.defocusCount + d;
+            for (int m = 0; m < A.mipCount; ++m) {
+                const PsfAtlas::Mip& ms = A.mips[src * A.mipCount + m];
+                PsfAtlas::Mip& md = A.mips[e * A.mipCount + m];
+                std::copy(A.texels.begin() + ms.offset, A.texels.begin() + ms.offset + static_cast<size_t>(ms.res) * ms.res * TF,
+                          A.texels.begin() + md.offset);
+                md.maxU = ms.maxU;
+            }
+        }
+    }
     return atlas;
 }
 

@@ -14,10 +14,11 @@ struct OpticsSettings {
     LensSettings lens;
     ApertureShape aperture;
 
-    // Artistic control over the aberrations the prescription already has (-1..1).
-    double spherical = 0.0;   // soap-bubble rim vs. soft edge
-    double coma = 0.0;        // comet-shaped highlights towards the corners
-    double astigmatism = 0.0; // positive: swirl (tangential stretch), negative: radial stretch
+    // Character controls on top of the aberrations the prescription already has.
+    double impression = 0.0;    // -1..1: negative = soft creamy disc, positive = hard bright rim
+    double coma = 0.0;          // -1..1: comet-shaped highlights towards the corners
+    double astigmatismMm = 0.0; // focus split between radial and tangential foci at the corner,
+                                // in mm of sensor travel (edge bokeh stretches into lines)
 
     double sensorWidthMm = 36.0;
     double frameWidthPx = 1920, frameHeightPx = 1080; // full-resolution frame the sensor spans
