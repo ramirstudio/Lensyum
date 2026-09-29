@@ -1,0 +1,86 @@
+// Pre-generated PiPL resource for Lensyum (output of PiPLtool from LensyumPiPL.r, macros
+// expanded). Regenerate with the SDK's PiPLtool if LensyumPiPL.r changes; keep the two files in sync.
+16000  PiPL  DISCARDABLE
+BEGIN
+        0x0001,
+        0, 0x0,             /* version */
+        13, 0x0,            /* property count */
+
+        "MIB8",
+        "dnik",             /* kind */
+        0, 0x0,
+        4, 0x0,
+        "TKFe",
+
+        "MIB8",
+        "eman",             /* name */
+        0, 0x0,
+        8, 0x0,
+        "\x07Lensyum",
+
+        "MIB8",
+        "gtac",             /* category */
+        0, 0x0,
+        8, 0x0,
+        "\x07Lensyum",
+
+        "MIB8",
+        "4668",             /* Win64 x86 code entry */
+        0, 0x0,
+        12, 0x0,
+        "EffectMain\0\0",
+
+        "MIB8",
+        "RVPe",             /* PiPL version */
+        0, 0x0,
+        4, 0x0,
+        2, 0,
+
+        "MIB8",
+        "RVSe",             /* effect spec version */
+        0, 0x0,
+        4, 0x0,
+        13, 29,
+
+        "MIB8",
+        0x65564552L,        /* eVER: effect version */
+        0L,
+        4L,
+        524289L,
+
+        "MIB8",
+        0x65494E46L,        /* eINF: info flags */
+        0L,
+        2L,
+        0L,
+
+        "MIB8",
+        "OLGe",             /* global out flags */
+        0L,
+        4L,
+        33554432L,
+
+        "MIB8",
+        "2LGe",             /* global out flags 2 */
+        0L,
+        4L,
+        134222848L,
+
+        "MIB8",
+        "ANMe",             /* match name */
+        0, 0x0,
+        16, 0x0,
+        "\x0DRAMIR Lensyum\0\0",
+
+        "MIB8",
+        0x6165464CL,        /* aeFL */
+        0L,
+        4L,
+        0L,
+
+        "MIB8",
+        "LRUe",             /* support URL */
+        0, 0x0,
+        40, 0x0,
+        "\x26https://github.com/ramirstudio/lensyum\0"
+END

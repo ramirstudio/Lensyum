@@ -11,35 +11,13 @@ if(NOT WIN32)
 endif()
 
 set(AE_HEADERS "${AE_EXAMPLES}/Headers" "${AE_EXAMPLES}/Headers/SP" "${AE_EXAMPLES}/Util")
-find_program(PIPL_TOOL PiPLtool PATHS "${AE_EXAMPLES}/Resources" NO_DEFAULT_PATH)
-if(NOT PIPL_TOOL)
-    message(FATAL_ERROR "PiPLtool.exe not found in ${AE_EXAMPLES}/Resources")
-endif()
-
-# PiPL: preprocess the .r, convert with PiPLtool, preprocess again into a .rc (the same steps
-# as the SDK sample projects, writing to files with /P instead of shell redirection).
-set(PIPL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/LensyumPiPL.r")
-set(PIPL_RR  "${CMAKE_CURRENT_BINARY_DIR}/LensyumPiPL.rr")
-set(PIPL_RRC "${CMAKE_CURRENT_BINARY_DIR}/LensyumPiPL.rrc")
-set(PIPL_RC  "${CMAKE_CURRENT_BINARY_DIR}/LensyumPiPL.rc")
-set(PIPL_INCLUDES "")
-foreach(dir ${AE_HEADERS})
-    list(APPEND PIPL_INCLUDES "/I" "${dir}")
-endforeach()
-add_custom_command(
-    OUTPUT "${PIPL_RC}"
-    COMMAND "${CMAKE_CXX_COMPILER}" /nologo ${PIPL_INCLUDES} /EP /P "/Fi${PIPL_RR}" "/Tc${PIPL_SRC}"
-    COMMAND "${PIPL_TOOL}" "${PIPL_RR}" "${PIPL_RRC}"
-    COMMAND "${CMAKE_CXX_COMPILER}" /nologo /D MSWindows /EP /P "/Fi${PIPL_RC}" "/Tc${PIPL_RRC}"
-    DEPENDS "${PIPL_SRC}"
-    COMMENT "Building PiPL resource"
-    VERBATIM
-)
+# The PiPL resource is committed pre-generated (LensyumPiPL.rc); running PiPLtool inside the
+# build produced an empty resource on some setups.
+set(PIPL_RC "${CMAKE_CURRENT_SOURCE_DIR}/LensyumPiPL.rc")
 
 # Without the RC language CMake silently skips the .rc and the .aex ships with no PiPL, which
 # After Effects then ignores.
 enable_language(RC)
-set_source_files_properties("${PIPL_RC}" PROPERTIES GENERATED TRUE LANGUAGE RC)
 
 add_library(Lensyum SHARED
     LensyumAE.cpp
