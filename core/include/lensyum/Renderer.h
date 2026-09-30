@@ -33,6 +33,7 @@ struct DefocusSettings {
     // Focus region: sharp inside an ellipse around the focus point, blur (amountPx) grows
     // outside it over regionFalloffPx. Sizes in full-resolution pixels.
     double regionRadiusPx = 300.0, regionFalloffPx = 400.0, regionAspect = 1.0;
+    bool regionKeepCenter = true; // inside the radius the output is exactly the source
     double focusPointX = 0, focusPointY = 0; // full-resolution layer pixels
 
     double scale = 1.0; // artistic multiplier on the computed blur

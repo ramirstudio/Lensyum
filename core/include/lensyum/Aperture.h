@@ -17,6 +17,7 @@ struct ApertureShape {
     double curvature = 0.0;      // 0 = straight blades, 1 = round
     double rotationRad = 0.0;
     double obstruction = 0.0;
+    double obstructionSoftness = 0.5; // 0 = hard edge, 1 = very soft
     double lobes = 0.0;          // 0..1: scalloped, lobed disc edge
     int lobeCount = 3;
     double lobePower = 3.0;      // sharpness of each lobe

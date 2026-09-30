@@ -17,6 +17,7 @@ constexpr int kMaxLevel = 5;
 constexpr int kChannels = 5; // premultiplied RGB, alpha coverage, geometric coverage
 constexpr int TF = PsfAtlas::kTexelFloats;
 constexpr double kIrisSign = -1.0;
+constexpr float kMinCoverage = 0.3f;
 
 struct Entry {
     int32_t x, y;
@@ -394,6 +395,36 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         }
     });
 
+    // A shape that is not round passes a different amount of light depending on how it sits
+    // against the cat-eye, i.e. on the field angle: measure it for kAngles orientations on a
+    // coarse mip (mip totals are box sums, so the mass is the same at every mip).
+    constexpr int kAngles = 32;
+    const int entries = static_cast<int>(mipTotal / A.mipCount);
+    int coarseMip = 0;
+    while (coarseMip + 1 < A.mipCount && A.mips[coarseMip].res > 24) ++coarseMip;
+    std::vector<float> massAng(irisRound ? 0 : static_cast<size_t>(entries) * kAngles * 3, 0.0f);
+    if (!irisRound) {
+        parallelFor(entries, [&](int entry) {
+            const PsfAtlas::Mip& mp = A.mips[static_cast<size_t>(entry) * A.mipCount + coarseMip];
+            const float* T0 = A.data(mp);
+            for (int b = 0; b < kAngles; ++b) {
+                const double th = 2.0 * kPi * b / kAngles, ex = std::sin(th), ey = std::cos(th);
+                double sum[3] = {0, 0, 0};
+                for (int t = 0; t < mp.res * mp.res; ++t) {
+                    const float* v = T0 + static_cast<size_t>(t) * TF;
+                    const float light = v[0] + v[1] + v[2];
+                    if (light <= 1e-12f) continue;
+                    const float px = v[3] / light, py = v[4] / light;
+                    const double qx = px * ey + py * ex, qy = -px * ex + py * ey;
+                    float tr = ap.sample(kIrisSign * qx, -kIrisSign * qy);
+                    if (lobesFace && tr > 0 && std::sqrt(px * px + py * py) > aper.lobeEdge(px, py)) tr = 0;
+                    for (int c = 0; c < 3; ++c) sum[c] += v[c] * tr;
+                }
+                for (int c = 0; c < 3; ++c) massAng[(static_cast<size_t>(entry) * kAngles + b) * 3 + c] = static_cast<float>(sum[c]);
+            }
+        });
+    }
+
     lzMark("bank");
     // ---- Splat one depth slice at one level ---------------------------------------------
     auto splatList = [&](const std::vector<Splat>& list, float maxR, int L) {
@@ -445,7 +476,17 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 const PsfAtlas::Mip& mip = A.mips[mi];
                 const float* T = A.data(mip);
                 const float* B = irisRound ? baked.data() + bakedOff[mi] : nullptr;
-                const float* M = &mass[mi * 3];
+                float Mv[3] = {mass[mi * 3], mass[mi * 3 + 1], mass[mi * 3 + 2]};
+                if (!irisRound) {
+                    double ang = std::atan2(ex, ey) / (2.0 * kPi) * kAngles;
+                    if (ang < 0) ang += kAngles;
+                    const int b0 = static_cast<int>(ang) % kAngles, b1 = (b0 + 1) % kAngles;
+                    const float f = static_cast<float>(ang - std::floor(ang));
+                    const size_t e = static_cast<size_t>(fi) * A.defocusCount + di;
+                    for (int c = 0; c < 3; ++c)
+                        Mv[c] = massAng[(e * kAngles + b0) * 3 + c] * (1 - f) + massAng[(e * kAngles + b1) * 3 + c] * f;
+                }
+                const float* M = Mv;
                 const int res = mip.res;
                 const double du = 2.0 * U / res;
                 const double invR = 1.0 / R;
@@ -460,10 +501,11 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 if (M[1] <= 1e-12f) { deposit(); continue; }
 
                 const double hx = mip.maxU * R / ax, hy = mip.maxU * R / ay;
-                const int fx0 = std::max(0, static_cast<int>(std::floor(cxL - hx)));
-                const int fx1 = std::min(lb.w - 1, static_cast<int>(std::ceil(cxL + hx)));
-                const int fy0 = std::max(0, static_cast<int>(std::floor(cyL - hy)));
-                const int fy1 = std::min(lb.h - 1, static_cast<int>(std::ceil(cyL + hy)));
+                // Full footprint (for normalisation) and its part inside the buffer (for writing).
+                const int ux0 = static_cast<int>(std::floor(cxL - hx)), ux1 = static_cast<int>(std::ceil(cxL + hx));
+                const int uy0 = static_cast<int>(std::floor(cyL - hy)), uy1 = static_cast<int>(std::ceil(cyL + hy));
+                const int fx0 = std::max(0, ux0), fx1 = std::min(lb.w - 1, ux1);
+                const int fy0 = std::max(0, uy0), fy1 = std::min(lb.h - 1, uy1);
                 const int ry0 = std::max(fy0, by0), ry1 = std::min(fy1, by1 - 1);
                 if (ry0 > ry1 || fx0 > fx1) continue;
 
@@ -515,12 +557,16 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 // Normalisation: exact for small footprints; otherwise the precomputed light passing
                 // the iris against the area one texel covers in output pixels.
                 float norm[3];
-                const int fw = fx1 - fx0 + 1, fh = fy1 - fy0 + 1;
-                if (fw * fh <= 64) {
+                const int fw = ux1 - ux0 + 1, fh = uy1 - uy0 + 1;
+                // Thin slivers (a shape almost cut away by the cat-eye) are summed exactly: a coarse
+                // estimate of so little light is too unreliable to scale by.
+                if (fw * fh <= 64 || M[1] < 0.2f) {
                     double sum[3] = {0, 0, 0};
                     float w3[3];
-                    for (int j = fy0; j <= fy1; ++j)
-                        for (int i = fx0; i <= fx1; ++i) { kernel(i, j, w3); sum[0] += w3[0]; sum[1] += w3[1]; sum[2] += w3[2]; }
+                    // Sum over the whole disc, including the part outside the frame: normalising by
+                    // the visible part only would amplify highlights near the edges.
+                    for (int j = uy0; j <= uy1; ++j)
+                        for (int i = ux0; i <= ux1; ++i) { kernel(i, j, w3); sum[0] += w3[0]; sum[1] += w3[1]; sum[2] += w3[2]; }
                     if (sum[1] <= 1e-12) { deposit(); continue; }
                     for (int c = 0; c < 3; ++c) norm[c] = sum[c] > 1e-12 ? static_cast<float>(1.0 / sum[c]) : 0.0f;
                 } else {
@@ -653,13 +699,14 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         for (int x = 0; x < W; ++x) {
             const float* o = &out[(static_cast<size_t>(y) * W + x) * kChannels];
             float* d = dst.px(x, y);
-            if (o[4] > 1e-5f) {
-                const float inv = 1.0f / o[4];
-                d[0] = o[0] * inv; d[1] = o[1] * inv; d[2] = o[2] * inv;
-                d[3] = std::min(o[3] * inv, 1.0f);
-            } else {
-                d[0] = d[1] = d[2] = d[3] = 0.0f;
-            }
+            // Where almost no disc reaches (frame edges with shapes that have a hole, like the
+            // crescent or a ring), top the coverage up with the source instead of dividing by
+            // nearly nothing, which would blow up or leave transparent holes.
+            const float fill = std::max(0.0f, kMinCoverage - o[4]);
+            const float* sp = srcIn.px(x, y);
+            const float inv = 1.0f / (o[4] + fill);
+            d[0] = (o[0] + sp[0] * fill) * inv; d[1] = (o[1] + sp[1] * fill) * inv; d[2] = (o[2] + sp[2] * fill) * inv;
+            d[3] = std::min((o[3] + sp[3] * fill) * inv, 1.0f);
         }
     });
     if (rs.view != RenderSettings::kResult) return;
@@ -722,6 +769,22 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         });
     }
 
+    // Focus Region: the centre stays exactly the original picture (no boost, no lateral CA),
+    // handing over to the render across the first part of the falloff.
+    if (df.mode == DefocusSettings::kRegion && df.regionKeepCenter) {
+        parallelFor(H, [&](int y) {
+            for (int x = 0; x < W; ++x) {
+                const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
+                const double rx = (lx - df.focusPointX) / std::max(df.regionAspect, 0.05), ry = ly - df.focusPointY;
+                const double d = std::sqrt(rx * rx + ry * ry);
+                const float keep = static_cast<float>(1.0 - smoothstep(df.regionRadiusPx, df.regionRadiusPx + 0.3 * std::max(df.regionFalloffPx, 1.0), d));
+                if (keep <= 0) continue;
+                const float* sp = srcIn.px(x, y);
+                float* o = dst.px(x, y);
+                for (int c = 0; c < 4; ++c) o[c] += (sp[c] - o[c]) * keep;
+            }
+        });
+    }
     const float blend = static_cast<float>(clampv(rs.blendBack, 0.0, 1.0));
     if (blend < 1.0f) {
         parallelFor(H, [&](int y) {

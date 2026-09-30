@@ -86,6 +86,8 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Region Aspect", 0.1, 10, 0.25, 4, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_REGION_ASPECT);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Keep Center Untouched", TRUE, 0, ID_REGION_KEEP);
+    AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_REGION_TOPIC_END);
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Depth Map", ID_DEPTH_TOPIC);
@@ -118,6 +120,8 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ADD_ANGLE("Blade Rotation", 0, ID_BLADE_ROTATION);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Central Obstruction", 0, 90, 0, 90, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_OBSTRUCTION);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Obstruction Softness", 0, 100, 0, 100, 50, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_OBSTRUCTION_SOFT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_LAYER("Custom Aperture", PF_LayerDefault_NONE, ID_CUSTOM_APERTURE);
     AEFX_CLR_STRUCT(def);
@@ -170,6 +174,8 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Layers", ID_LAYERS_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Rain", FALSE, 0, ID_RAIN_ENABLE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_LAYER("Rain Layer", PF_LayerDefault_NONE, ID_RAIN_LAYER);
     AEFX_CLR_STRUCT(def);
@@ -491,6 +497,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         d.regionRadiusPx = pr.num(P_REGION_RADIUS);
         d.regionFalloffPx = pr.num(P_REGION_FALLOFF);
         d.regionAspect = pr.num(P_REGION_ASPECT);
+        d.regionKeepCenter = pr.num(P_REGION_KEEP) != 0;
         d.amountPx = pr.num(P_DEFOCUS_AMOUNT);
         d.whiteIsNear = pr.num(P_DEPTH_WHITE) < 2;
         d.inverseDepth = pr.num(P_DEPTH_ENCODING) >= 2;
@@ -512,6 +519,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         a.curvature = pr.num(P_BLADE_CURVATURE) / 100.0;
         a.rotationRad = pr.num(P_BLADE_ROTATION) * kPi / 180.0;
         a.obstruction = pr.num(P_OBSTRUCTION) / 100.0;
+        a.obstructionSoftness = pr.num(P_OBSTRUCTION_SOFT) / 100.0;
 
         o.lens.vignetting = pr.num(P_CATEYE) / 100.0;
         const bool caOn = pr.num(P_CA_ENABLE) != 0;
@@ -537,7 +545,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         a.textureScale = pr.num(P_TEXTURE_SCALE) / 100.0;
         a.textureSeed = static_cast<int>(pr.num(P_TEXTURE_SEED));
         rs.rain.distanceMm = pr.num(P_RAIN_DISTANCE) * 1000.0;
-        rs.rain.strength = pr.num(P_RAIN_STRENGTH) / 100.0;
+        rs.rain.strength = pr.num(P_RAIN_ENABLE) != 0 ? pr.num(P_RAIN_STRENGTH) / 100.0 : 0.0;
         rs.rain.refractPx = pr.num(P_RAIN_REFRACTION);
         rs.shimmer.amount = pr.num(P_SHIMMER) / 100.0;
         rs.shimmer.density = pr.num(P_SHIMMER_DENSITY);

@@ -101,9 +101,14 @@ float ApertureShape::transmission(double x, double y) const {
     if (lobes > 0 && lobeCount >= 2 && !lobesFaceCenter) {
         if (rho > lobeEdge(x, y)) return 0.0f;
     }
-    if (obstruction > 0 && rho < obstruction) return 0.0f;
-
     double t = 1.0;
+    if (obstruction > 0) {
+        // Soft-edged central obscuration: the secondary mirror of a catadioptric lens sits far
+        // from the stop, so its shadow in the pupil has a gradual edge.
+        const double soft = clampv(obstructionSoftness, 0.0, 1.0) * 0.6 * obstruction + 1e-3;
+        t *= smoothstep(obstruction - soft, obstruction + soft, rho);
+        if (t <= 0) return 0.0f;
+    }
     if (!mask.empty() && maskW > 1 && maskH > 1) {
         const double mx = (x * 0.5 + 0.5) * (maskW - 1);
         const double my = (0.5 - y * 0.5) * (maskH - 1);
@@ -133,7 +138,7 @@ float ApertureShape::transmission(double x, double y) const {
 }
 
 void ApertureShape::hashInto(Hasher& h) const {
-    h.add(shape); h.add(blades); h.add(curvature); h.add(rotationRad); h.add(obstruction);
+    h.add(shape); h.add(blades); h.add(curvature); h.add(rotationRad); h.add(obstruction); h.add(obstructionSoftness);
     h.add(lobes); h.add(lobeCount); h.add(lobePower); h.add(lobeAngle); h.add(lobesFaceCenter); h.add(onion); h.add(onionFreq); h.add(texture); h.add(textureScale); h.add(textureSeed);
     h.add(maskW); h.add(maskH);
     if (!mask.empty()) h.bytes(mask.data(), mask.size() * sizeof(float));

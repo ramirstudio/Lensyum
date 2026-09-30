@@ -79,6 +79,7 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     o.aperture.curvature = a.num("curv", 0.0);
     o.aperture.rotationRad = a.num("rot", 0.0) * kPi / 180.0;
     o.aperture.obstruction = a.num("obst", 0.0);
+    o.aperture.obstructionSoftness = a.num("obstsoft", 0.5);
     o.aperture.onion = a.num("onion", 0.0);
     o.aperture.onionFreq = a.num("onionfreq", 6.0);
     o.aperture.texture = a.num("texture", 0.0);
