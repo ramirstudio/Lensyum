@@ -28,4 +28,18 @@ bool depthAIEstimate(const float* rgb, int w, int h, int inferLongSide, bool ref
 // Edge-aware refinement of a depth map with the image as guide (guided filter).
 void refineDepth(const float* rgb, int w, int h, std::vector<float>& depth, int radius, float eps);
 
+// Shapes an estimated depth map (0 = far, 1 = near) before it drives the blur.
+//   farPoint/nearPoint: levels, values at or below farPoint become 0 and at or above nearPoint 1.
+//   gamma: > 1 pushes the middle towards far, < 1 towards near. shift: moves all depths.
+//   smoothRadius: box blur in map pixels. range: when focusU/focusV are inside 0..1, depths within
+//   +-range of the depth under that point are flattened onto it, so a whole band stays sharp.
+struct DepthAdjust {
+    float farPoint = 0.0f, nearPoint = 1.0f, gamma = 1.0f, shift = 0.0f;
+    bool invert = false;
+    float smoothRadius = 0.0f;
+    float range = 0.0f;
+    float focusU = -1.0f, focusV = -1.0f;
+};
+void adjustDepth(std::vector<float>& depth, int w, int h, const DepthAdjust& a);
+
 } // namespace lensyum

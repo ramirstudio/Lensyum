@@ -123,6 +123,22 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOXX("Use GPU", TRUE, 0, ID_AI_GPU);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Focus On Focus Point", TRUE, 0, ID_AI_FOCUS_POINT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Sharp Range", 0, 50, 0, 50, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_AI_RANGE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Far Cut", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_AI_FAR);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Near Cut", 0, 100, 0, 100, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_AI_NEAR);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Depth Contrast", 0.2, 5, 0.2, 5, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_AI_CONTRAST);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Depth Shift", -50, 50, -50, 50, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_AI_SHIFT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Depth Smooth (px)", 0, 100, 0, 60, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_AI_SMOOTH);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Invert Depth", FALSE, 0, ID_AI_INVERT);
+    AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_AI_TOPIC_END);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_FOCUS_TOPIC_END);
@@ -236,7 +252,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_POINT("Optical Center", 50, 50, FALSE, ID_OPTICAL_CENTER);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("View", 4, 1, "Result|Blur Map|Bokeh Grid|Depth Map", ID_VIEW);
+    PF_ADD_POPUP("View", 5, 1, "Result|Blur Map|Bokeh Grid|Depth Map|Focus Overlay", ID_VIEW);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_RENDER_TOPIC_END);
 
@@ -540,6 +556,15 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         const int aiDetail = static_cast<int>(pr.num(P_AI_DETAIL));
         const bool aiRefine = pr.num(P_AI_REFINE) != 0;
         const bool aiGpu = pr.num(P_AI_GPU) != 0;
+        DepthAdjust aiAdj;
+        aiAdj.farPoint = static_cast<float>(pr.num(P_AI_FAR) / 100.0);
+        aiAdj.nearPoint = static_cast<float>(pr.num(P_AI_NEAR) / 100.0);
+        aiAdj.gamma = static_cast<float>(pr.num(P_AI_CONTRAST));
+        aiAdj.shift = static_cast<float>(pr.num(P_AI_SHIFT) / 100.0);
+        aiAdj.invert = pr.num(P_AI_INVERT) != 0;
+        aiAdj.range = static_cast<float>(pr.num(P_AI_RANGE) / 100.0);
+        const bool aiFocusPoint = pr.num(P_AI_FOCUS_POINT) != 0;
+        const double aiSmoothPx = pr.num(P_AI_SMOOTH);
         d.regionRadiusPx = pr.num(P_REGION_RADIUS);
         d.regionFalloffPx = pr.num(P_REGION_FALLOFF);
         d.regionAspect = pr.num(P_REGION_ASPECT);
@@ -550,7 +575,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         d.nearMm = pr.num(P_DEPTH_NEAR) * 1000.0;
         d.farMm = pr.num(P_DEPTH_FAR) * 1000.0;
         d.focusMm = pr.num(P_FOCUS_DISTANCE) * 1000.0;
-        d.focusFromPoint = pr.num(P_FOCUS_PICK) != 0;
+        d.focusFromPoint = aiDepth ? aiFocusPoint : pr.num(P_FOCUS_PICK) != 0;
         double fpx, fpy;
         pr.point(P_FOCUS_POINT, fpx, fpy);
         d.focusPointX = fpx / dsx; // point values arrive at the current downsample
@@ -703,6 +728,12 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
 #endif
                 }
                 if (!aiFailed) {
+                    aiAdj.smoothRadius = static_cast<float>(aiSmoothPx * cw / std::max(prd->layerW, 1.0));
+                    if (aiAdj.range > 0.0f) {
+                        aiAdj.focusU = static_cast<float>(d.focusPointX / std::max(prd->layerW, 1.0));
+                        aiAdj.focusV = static_cast<float>(d.focusPointY / std::max(prd->layerH, 1.0));
+                    }
+                    adjustDepth(aiDepthBuf, cw, ch, aiAdj);
                     d.depth = aiDepthBuf.data();
                     d.depthW = cw;
                     d.depthH = ch;

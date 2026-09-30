@@ -307,4 +307,52 @@ bool depthAIEstimate(const float* rgb, int w, int h, int inferLongSide, bool ref
 
 #endif
 
+
+void adjustDepth(std::vector<float>& d, int w, int h, const DepthAdjust& a) {
+    if (w < 1 || h < 1 || d.size() < static_cast<size_t>(w) * h) return;
+    const float span = std::max(a.nearPoint - a.farPoint, 0.02f);
+    const float g = std::max(a.gamma, 0.05f);
+    for (float& v : d) {
+        if (a.invert) v = 1.0f - v;
+        v = std::min(std::max((v - a.farPoint) / span, 0.0f), 1.0f);
+        if (g != 1.0f) v = std::pow(v, g);
+        v = std::min(std::max(v + a.shift, 0.0f), 1.0f);
+    }
+    const int r = static_cast<int>(std::lround(a.smoothRadius));
+    if (r > 0) {
+        std::vector<float> tmp(d.size());
+        for (int pass = 0; pass < 2; ++pass) {
+            for (int y = 0; y < h; ++y) { // horizontal running mean, edges clamped
+                const float* in = d.data() + static_cast<size_t>(y) * w;
+                float* out = tmp.data() + static_cast<size_t>(y) * w;
+                double acc = 0;
+                for (int k = -r; k <= r; ++k) acc += in[std::min(std::max(k, 0), w - 1)];
+                for (int x = 0; x < w; ++x) {
+                    out[x] = static_cast<float>(acc / (2 * r + 1));
+                    acc += in[std::min(x + r + 1, w - 1)] - in[std::max(x - r, 0)];
+                }
+            }
+            for (int x = 0; x < w; ++x) { // vertical
+                double acc = 0;
+                for (int k = -r; k <= r; ++k) acc += tmp[static_cast<size_t>(std::min(std::max(k, 0), h - 1)) * w + x];
+                for (int y = 0; y < h; ++y) {
+                    d[static_cast<size_t>(y) * w + x] = static_cast<float>(acc / (2 * r + 1));
+                    acc += tmp[static_cast<size_t>(std::min(y + r + 1, h - 1)) * w + x] - tmp[static_cast<size_t>(std::max(y - r, 0)) * w + x];
+                }
+            }
+        }
+    }
+    if (a.range > 0.0f && a.focusU >= 0.0f && a.focusU <= 1.0f && a.focusV >= 0.0f && a.focusV <= 1.0f) {
+        const int fx = std::min(std::max(static_cast<int>(a.focusU * w), 0), w - 1);
+        const int fy = std::min(std::max(static_cast<int>(a.focusV * h), 0), h - 1);
+        const float f0 = d[static_cast<size_t>(fy) * w + fx];
+        for (float& v : d) {
+            const float e = v - f0;
+            const float m = std::max(std::fabs(e) - a.range, 0.0f);
+            v = f0 + (e < 0 ? -m : m);
+            v = std::min(std::max(v, 0.0f), 1.0f);
+        }
+    }
+}
+
 } // namespace lensyum

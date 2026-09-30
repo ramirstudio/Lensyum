@@ -39,6 +39,14 @@ enum {
     P_AI_DETAIL,
     P_AI_REFINE,
     P_AI_GPU,
+    P_AI_FOCUS_POINT,
+    P_AI_RANGE,
+    P_AI_FAR,
+    P_AI_NEAR,
+    P_AI_CONTRAST,
+    P_AI_SHIFT,
+    P_AI_SMOOTH,
+    P_AI_INVERT,
     P_AI_TOPIC_END,
     P_FOCUS_TOPIC_END,
 
@@ -194,7 +202,15 @@ enum {
     ID_AI_DETAIL,
     ID_AI_REFINE,
     ID_AI_GPU,
-    ID_AI_TOPIC_END
+    ID_AI_TOPIC_END,
+    ID_AI_FOCUS_POINT,
+    ID_AI_RANGE,
+    ID_AI_FAR,
+    ID_AI_NEAR,
+    ID_AI_CONTRAST,
+    ID_AI_SHIFT,
+    ID_AI_SMOOTH,
+    ID_AI_INVERT
 };
 
 // Checkout IDs used between PreRender and SmartRender.

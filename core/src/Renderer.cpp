@@ -245,6 +245,27 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         return;
     }
 
+    if (rs.view == RenderSettings::kFocusOverlay) {
+        // The frame itself, tinted by how far each pixel is from focus: orange behind the plane
+        // of focus, blue in front of it, untouched where it is sharp.
+        parallelFor(H, [&](int y) {
+            for (int x = 0; x < W; ++x) {
+                const Source& S = srcs[static_cast<size_t>(y) * W + x];
+                const float m = static_cast<float>(std::min(std::fabs(S.s) / std::max(maxBlur * 0.5, 1.0), 1.0));
+                const float k = 0.75f * m;
+                const float tr = S.s >= 0 ? 1.0f : 0.1f, tg = 0.5f, tb = S.s >= 0 ? 0.05f : 1.0f;
+                const float a = std::max(S.c[3], 1e-5f);
+                float* o = dst.px(x, y);
+                const float l = luma(S.c) / a;
+                o[0] = S.c[0] * (1 - k) + a * (0.45f + 0.55f * l) * tr * k;
+                o[1] = S.c[1] * (1 - k) + a * (0.45f + 0.55f * l) * tg * k;
+                o[2] = S.c[2] * (1 - k) + a * (0.45f + 0.55f * l) * tb * k;
+                o[3] = S.c[3];
+            }
+        });
+        return;
+    }
+
     lzMark("sources");
     // ---- Depth slices -------------------------------------------------------------------
     const float dsMax = static_cast<float>(std::max(dsx, dsy));
