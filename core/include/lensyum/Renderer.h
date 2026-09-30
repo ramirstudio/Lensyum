@@ -16,7 +16,7 @@ struct Image {
 };
 
 struct DefocusSettings {
-    enum Mode { kUniform = 0, kDepthMap = 1 };
+    enum Mode { kUniform = 0, kDepthMap = 1, kRegion = 2 };
     int mode = kUniform;
 
     // Uniform: signed blur radius in full-resolution pixels (+ background look, - foreground look).
@@ -30,6 +30,9 @@ struct DefocusSettings {
     double nearMm = 500.0, farMm = 20000.0;
     double focusMm = 3000.0;
     bool focusFromPoint = false;
+    // Focus region: sharp inside an ellipse around the focus point, blur (amountPx) grows
+    // outside it over regionFalloffPx. Sizes in full-resolution pixels.
+    double regionRadiusPx = 300.0, regionFalloffPx = 400.0, regionAspect = 1.0;
     double focusPointX = 0, focusPointY = 0; // full-resolution layer pixels
 
     double scale = 1.0; // artistic multiplier on the computed blur
@@ -57,6 +60,7 @@ struct RenderSettings {
     double fieldCurvatureMm = 0.0; // focus shift at the frame corner, mm of sensor travel
     double filmbackOffsetMm = 0.0; // sensor moved along the axis: shifts focus everywhere
     double blendBack = 1.0;        // 1 = full effect, 0 = original
+    double lateralCaPx = 0.0;      // lateral chromatic aberration: red/blue shift at the corner, px
     int layers = 12;      // depth slices for occlusion
     enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2 };
     int view = kResult;

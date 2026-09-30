@@ -14,11 +14,11 @@ La sfocatura può essere uniforme (in pixel) oppure calcolata da una mappa di pr
 
 Camera: preset dell'obiettivo (ogni preset ha la sua focale), formato del sensore (full frame, Super 35, APS-C, Micro 4/3, Super 16, Large Format 65 o larghezza personalizzata), diaframma. Se chiedi un diaframma più aperto di quello massimo della lente, viene usato il massimo.
 
-Focus: sorgente della sfocatura (uniforme o mappa di profondità), layer di profondità con polarità e codifica (distanza lineare o disparità 1/z, il formato tipico delle mappe generate da AI), distanze near/far in metri, distanza di messa a fuoco oppure messa a fuoco su un punto campionato dalla mappa, scala della sfocatura.
+Focus: sorgente della sfocatura (uniforme, mappa di profondità oppure Focus Region, dove scegli il punto nitido con Focus Point, quanto è grande la zona nitida con Region Radius, quanto è graduale il passaggio con Region Falloff e la forma con Region Aspect, mentre Defocus Amount decide quanto sfocare il resto), layer di profondità con polarità e codifica (distanza lineare o disparità 1/z, il formato tipico delle mappe generate da AI), distanze near/far in metri, distanza di messa a fuoco oppure messa a fuoco su un punto campionato dalla mappa, scala della sfocatura.
 
 Aperture: numero di lamelle, curvatura, rotazione, ostruzione centrale (bokeh a ciambella degli obiettivi catadiottrici), layer da usare come apertura personalizzata.
 
-Creative: Impression (positivo bordo netto e luminoso, negativo disco morbido), Coma, Astigmatism in millimetri di spostamento del fuoco tra direzione radiale e tangenziale all'angolo, Field Curvature in millimetri (gli angoli vanno fuori fuoco), Zonal Ripple con densità (anelli concentrici), Lobes con numero di lobi, aberrazione cromatica, Cat-Eye (vignettatura meccanica), squeeze anamorfico, texture del vetro con scala e seed.
+Creative: Impression (positivo bordo netto e luminoso, negativo disco morbido), Coma, Astigmatism in millimetri di spostamento del fuoco tra direzione radiale e tangenziale all'angolo, Field Curvature in millimetri (gli angoli vanno fuori fuoco), Zonal Ripple con densità (anelli concentrici), Lobes con numero, forma, angolo e orientamento verso il centro, aberrazione cromatica attivabile (Bokeh Fringing per le frange colorate sui dischi, Lateral CA per lo spostamento rosso/blu verso i bordi che si vede anche sulle zone nitide), Cat-Eye (vignettatura meccanica), squeeze anamorfico, Bokeh Imperfections (polvere e grana dentro i dischi) con scala e seed, Lens Coverage, Filmback Offset.
 
 Highlights: soglia e boost delle alte luci prima della sfocatura, per recuperare la luminosità che il footage a 8/16 bit ha perso nel clipping.
 

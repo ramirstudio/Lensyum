@@ -92,6 +92,12 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     rs.fieldCurvatureMm = a.num("fc", 0.0);
     rs.filmbackOffsetMm = a.num("film", 0.0);
     rs.blendBack = a.num("blend", 1.0);
+    rs.lateralCaPx = a.num("lca", 0.0);
+    if (a.kv.count("region")) {
+        rs.defocus.mode = DefocusSettings::kRegion;
+        rs.defocus.regionRadiusPx = a.num("region", 200);
+        rs.defocus.regionFalloffPx = a.num("falloff", 300);
+    }
     o.coverage = a.num("coverage", 1.0);
     o.impressionPower = a.num("imppow", 3.0);
     o.aperture.lobePower = a.num("lobepow", 3.0);
@@ -249,6 +255,10 @@ int main(int argc, char** argv) {
         return 1;
     }
     setFrame(rs, src.width, src.height);
+    if (rs.defocus.mode == DefocusSettings::kRegion) {
+        rs.defocus.focusPointX = a.num("px", 0.5) * src.width;
+        rs.defocus.focusPointY = a.num("py", 0.5) * src.height;
+    }
 
     Image out;
     const auto t0 = std::chrono::steady_clock::now();

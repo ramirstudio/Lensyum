@@ -68,9 +68,9 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Focus", ID_FOCUS_TOPIC);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Defocus Source", 2, 1, "Uniform|Depth Map", ID_DEFOCUS_MODE);
+    PF_ADD_POPUP("Defocus Source", 3, 1, "Uniform|Depth Map|Focus Region", ID_DEFOCUS_MODE);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Uniform Defocus (px)", -500, 500, -150, 150, 30, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_DEFOCUS_AMOUNT);
+    PF_ADD_FLOAT_SLIDERX("Defocus Amount (px)", -500, 500, -150, 150, 30, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_DEFOCUS_AMOUNT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_LAYER("Depth Layer", PF_LayerDefault_NONE, ID_DEPTH_LAYER);
     AEFX_CLR_STRUCT(def);
@@ -87,6 +87,12 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ADD_CHECKBOXX("Focus On Point", FALSE, 0, ID_FOCUS_PICK);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POINT("Focus Point", 50, 50, FALSE, ID_FOCUS_POINT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Region Radius (px)", 0, 10000, 0, 1500, 300, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_RADIUS);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Region Falloff (px)", 1, 10000, 1, 2000, 400, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_FALLOFF);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Region Aspect", 0.1, 10, 0.25, 4, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_REGION_ASPECT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Defocus Scale", 0, 1000, 0, 300, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_DEFOCUS_SCALE);
     AEFX_CLR_STRUCT(def);
@@ -134,13 +140,17 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOXX("Lobes Face Center", FALSE, 0, ID_LOBES_FACE_CENTER);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Chromatic Aberration", 0, 1000, 0, 500, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CHROMATIC);
+    PF_ADD_CHECKBOXX("Chromatic Aberration", TRUE, 0, ID_CA_ENABLE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Bokeh Fringing", 0, 1000, 0, 500, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CHROMATIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Lateral CA (px)", -20, 20, -5, 5, 0.5, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_LATERAL_CA);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Cat-Eye", 0, 200, 0, 200, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CATEYE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Anamorphic Squeeze", 1, 3, 1, 2.5, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_SQUEEZE);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Glass Texture", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_TEXTURE);
+    PF_ADD_FLOAT_SLIDERX("Bokeh Imperfections", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_TEXTURE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Texture Scale", 10, 400, 25, 300, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_TEXTURE_SCALE);
     AEFX_CLR_STRUCT(def);
@@ -345,7 +355,7 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
     ParamReader pr(in_data);
     const double maxBlur = pr.num(P_MAX_BLUR);
     const double squeeze = std::max(pr.num(P_SQUEEZE), 1.0);
-    const bool uniform = pr.num(P_DEFOCUS_MODE) < 2;
+    const bool uniform = pr.num(P_DEFOCUS_MODE) != 2; // uniform and focus region never exceed the amount
     const double amount = std::fabs(pr.num(P_DEFOCUS_AMOUNT)) * pr.num(P_DEFOCUS_SCALE) / 100.0;
     const double fieldCurv = std::fabs(pr.num(P_FIELD_CURVATURE)) + std::fabs(pr.num(P_FILMBACK_OFFSET));
     const int view = static_cast<int>(pr.num(P_VIEW));
@@ -442,7 +452,11 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         o.sensorWidthMm = format >= 1 && format < kFormatCount ? kFormatWidths[format - 1] : pr.num(P_SENSOR_WIDTH);
 
         DefocusSettings& d = rs.defocus;
-        d.mode = pr.num(P_DEFOCUS_MODE) >= 2 ? DefocusSettings::kDepthMap : DefocusSettings::kUniform;
+        const int mode = static_cast<int>(pr.num(P_DEFOCUS_MODE));
+        d.mode = mode == 2 ? DefocusSettings::kDepthMap : (mode == 3 ? DefocusSettings::kRegion : DefocusSettings::kUniform);
+        d.regionRadiusPx = pr.num(P_REGION_RADIUS);
+        d.regionFalloffPx = pr.num(P_REGION_FALLOFF);
+        d.regionAspect = pr.num(P_REGION_ASPECT);
         d.amountPx = pr.num(P_DEFOCUS_AMOUNT);
         d.whiteIsNear = pr.num(P_DEPTH_WHITE) < 2;
         d.inverseDepth = pr.num(P_DEPTH_ENCODING) >= 2;
@@ -465,7 +479,9 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         a.obstruction = pr.num(P_OBSTRUCTION) / 100.0;
 
         o.lens.vignetting = pr.num(P_CATEYE) / 100.0;
-        o.lens.dispersion = pr.num(P_CHROMATIC) / 100.0;
+        const bool caOn = pr.num(P_CA_ENABLE) != 0;
+        o.lens.dispersion = caOn ? pr.num(P_CHROMATIC) / 100.0 : 0.0;
+        rs.lateralCaPx = caOn ? pr.num(P_LATERAL_CA) : 0.0;
         o.impression = pr.num(P_IMPRESSION) / 100.0;
         o.impressionPower = pr.num(P_IMPRESSION_POWER);
         o.coverage = pr.num(P_COVERAGE);

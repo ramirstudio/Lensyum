@@ -26,6 +26,9 @@ enum {
     P_FOCUS_DISTANCE,
     P_FOCUS_PICK,
     P_FOCUS_POINT,
+    P_REGION_RADIUS,
+    P_REGION_FALLOFF,
+    P_REGION_ASPECT,
     P_DEFOCUS_SCALE,
     P_FOCUS_TOPIC_END,
 
@@ -50,7 +53,9 @@ enum {
     P_LOBE_POWER,
     P_LOBE_ANGLE,
     P_LOBES_FACE_CENTER,
+    P_CA_ENABLE,
     P_CHROMATIC,
+    P_LATERAL_CA,
     P_CATEYE,
     P_SQUEEZE,
     P_TEXTURE,
@@ -139,7 +144,12 @@ enum {
     ID_LOBE_POWER,
     ID_LOBE_ANGLE,
     ID_LOBES_FACE_CENTER,
-    ID_BLEND_BACK
+    ID_BLEND_BACK,
+    ID_REGION_RADIUS,
+    ID_REGION_FALLOFF,
+    ID_REGION_ASPECT,
+    ID_CA_ENABLE,
+    ID_LATERAL_CA
 };
 
 // Checkout IDs used between PreRender and SmartRender.

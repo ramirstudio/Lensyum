@@ -195,6 +195,11 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
             const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
             double s = df.amountPx;
             if (useDepth) s = (*d2b)(depthToDistance(df, sampleDepth(df, lx / fm.layerW, ly / fm.layerH)));
+            else if (df.mode == DefocusSettings::kRegion) {
+                const double rx = (lx - df.focusPointX) / std::max(df.regionAspect, 0.05), ry = ly - df.focusPointY;
+                const double d = std::sqrt(rx * rx + ry * ry);
+                s = df.amountPx * smoothstep(df.regionRadiusPx, df.regionRadiusPx + std::max(df.regionFalloffPx, 1.0), d);
+            }
             s += filmPx;
             if (fcPx != 0.0) {
                 // Field curvature: the plane of focus bows, corners defocus by fieldCurvatureMm.
@@ -588,7 +593,6 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
 
     accTL.swap(levels[0].acc);
     lzMark("slices");
-    const float blend = static_cast<float>(clampv(rs.blendBack, 0.0, 1.0));
     // Renormalise by geometric coverage: fills the gaps left where hidden background would be.
     parallelFor(H, [&](int y) {
         for (int x = 0; x < W; ++x) {
@@ -598,15 +602,48 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 const float inv = 1.0f / o[4];
                 d[0] = o[0] * inv; d[1] = o[1] * inv; d[2] = o[2] * inv;
                 d[3] = std::min(o[3] * inv, 1.0f);
-                if (blend < 1.0f && rs.view == RenderSettings::kResult) {
-                    const float* sp = srcIn.px(x, y);
-                    for (int c = 0; c < 4; ++c) d[c] = sp[c] + (d[c] - sp[c]) * blend;
-                }
             } else {
                 d[0] = d[1] = d[2] = d[3] = 0.0f;
             }
         }
     });
+    if (rs.view != RenderSettings::kResult) return;
+
+    // Lateral chromatic aberration: red magnified and blue shrunk about the optical centre,
+    // growing towards the corners; it shows on sharp and blurred areas alike.
+    if (rs.lateralCaPx != 0.0) {
+        const double hd = 0.5 * std::hypot(fm.layerW * par, fm.layerH);
+        std::vector<float> copy(dst.rgba);
+        parallelFor(H, [&](int y) {
+            for (int x = 0; x < W; ++x) {
+                const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
+                for (int c = 0; c < 3; c += 2) {
+                    const double k = (c == 0 ? 1.0 : -1.0) * rs.lateralCaPx / hd;
+                    const double sc = 1.0 / (1.0 + k);
+                    const double sx = (fm.centerX + (lx - fm.centerX) * sc) * dsx - fm.originX - 0.5;
+                    const double sy = (fm.centerY + (ly - fm.centerY) * sc) * dsy - fm.originY - 0.5;
+                    const int x0 = clampv(static_cast<int>(std::floor(sx)), 0, W - 1), y0 = clampv(static_cast<int>(std::floor(sy)), 0, H - 1);
+                    const int x1 = std::min(x0 + 1, W - 1), y1 = std::min(y0 + 1, H - 1);
+                    const float fx = static_cast<float>(clampv(sx - x0, 0.0, 1.0)), fy = static_cast<float>(clampv(sy - y0, 0.0, 1.0));
+                    auto at = [&](int xx, int yy) { return copy[(static_cast<size_t>(yy) * W + xx) * 4 + c]; };
+                    const float a0 = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * fx;
+                    const float a1 = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * fx;
+                    dst.px(x, y)[c] = a0 + (a1 - a0) * fy;
+                }
+            }
+        });
+    }
+
+    const float blend = static_cast<float>(clampv(rs.blendBack, 0.0, 1.0));
+    if (blend < 1.0f) {
+        parallelFor(H, [&](int y) {
+            for (int x = 0; x < W; ++x) {
+                const float* sp = srcIn.px(x, y);
+                float* d = dst.px(x, y);
+                for (int c = 0; c < 4; ++c) d[c] = sp[c] + (d[c] - sp[c]) * blend;
+            }
+        });
+    }
 }
 
 } // namespace lensyum
