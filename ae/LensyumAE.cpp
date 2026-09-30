@@ -66,6 +66,7 @@ const std::string& lensPopupString() {
 PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ParamDef def;
 
+#ifdef LENSYUM_BANNER
     // Banner: a parameter without data whose only job is to be drawn (see DrawBanner).
     AEFX_CLR_STRUCT(def);
     def.param_type = PF_Param_NO_DATA;
@@ -76,6 +77,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_STRCPY(def.PF_DEF_NAME, " ");
     def.uu.id = ID_BANNER;
     if (const PF_Err e = (*in_data->inter.add_param)(in_data->effect_ref, -1, &def)) return e;
+#endif
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Camera", ID_CAMERA_TOPIC);
@@ -477,6 +479,27 @@ std::string pluginFolder() {
 #endif
 }
 
+void logLine(const std::string& text) {
+#ifdef AE_OS_WIN
+    char tmp[MAX_PATH + 1] = {0};
+    if (GetTempPathA(MAX_PATH, tmp) > 0) {
+        if (FILE* f = std::fopen((std::string(tmp) + "lensyum_log.txt").c_str(), "a")) {
+            std::fprintf(f, "%s\n", text.c_str());
+            std::fclose(f);
+        }
+    }
+#else
+    (void)text;
+#endif
+}
+
+// Progress marks for the first calls of each process, so a crash can be placed from the log.
+void logStep(const char* what) {
+    static std::atomic<int> count{0};
+    if (count.fetch_add(1) < 160) logLine(what);
+}
+
+#ifdef LENSYUM_BANNER
 // ------------------------------------------------------------------------------------
 // Banner at the top of the Effect Controls panel
 // ------------------------------------------------------------------------------------
@@ -521,26 +544,6 @@ struct BannerSpan {
     bool known = false;
 };
 BannerSpan g_bannerTitle, g_bannerControl;
-
-void logLine(const std::string& text) {
-#ifdef AE_OS_WIN
-    char tmp[MAX_PATH + 1] = {0};
-    if (GetTempPathA(MAX_PATH, tmp) > 0) {
-        if (FILE* f = std::fopen((std::string(tmp) + "lensyum_log.txt").c_str(), "a")) {
-            std::fprintf(f, "%s\n", text.c_str());
-            std::fclose(f);
-        }
-    }
-#else
-    (void)text;
-#endif
-}
-
-// Progress marks for the first calls of each process, so a crash can be placed from the log.
-void logStep(const char* what) {
-    static std::atomic<int> count{0};
-    if (count.fetch_add(1) < 160) logLine(what);
-}
 
 // The banner is one picture spread over the parameter's title area and its control area: each
 // draw event paints its own share, sized to the whole row (cover fit, centred).
@@ -660,6 +663,7 @@ PF_Err handleEvent(PF_InData* in_data, PF_EventExtra* ev) {
     if (ev->e_type != PF_Event_DRAW || ev->effect_win.index != P_BANNER) return PF_Err_NONE;
     return drawBanner(in_data, ev);
 }
+#endif
 
 inline double ratio(const PF_RationalScale& r) { return r.den ? double(r.num) / double(r.den) : 1.0; }
 
@@ -1028,7 +1032,10 @@ PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data) {
     logStep("GlobalSetup");
     out_data->my_version = PF_VERSION(LENSYUM_MAJOR, LENSYUM_MINOR, LENSYUM_BUG, PF_Stage_DEVELOP, LENSYUM_BUILD);
     // Must match AE_Effect_Global_OutFlags / _2 in LensyumPiPL.r (and the 'global out flags' values in LensyumPiPL.rc).
-    out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_CUSTOM_UI;
+    out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
+#ifdef LENSYUM_BANNER
+    out_data->out_flags |= PF_OutFlag_CUSTOM_UI;
+#endif
     out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER | PF_OutFlag2_FLOAT_COLOR_AWARE |
                            PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
     return PF_Err_NONE;
@@ -1063,7 +1070,9 @@ extern "C" DllExport PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutDat
         case PF_Cmd_PARAMS_SETUP: err = ParamsSetup(in_data, out_data); break;
         case PF_Cmd_SMART_PRE_RENDER: err = PreRender(in_data, out_data, static_cast<PF_PreRenderExtra*>(extra)); break;
         case PF_Cmd_SMART_RENDER: err = SmartRender(in_data, out_data, static_cast<PF_SmartRenderExtra*>(extra)); break;
+#ifdef LENSYUM_BANNER
         case PF_Cmd_EVENT: err = handleEvent(in_data, static_cast<PF_EventExtra*>(extra)); break;
+#endif
         default: break;
         }
     } catch (const std::bad_alloc&) {

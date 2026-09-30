@@ -5,7 +5,9 @@
 
 enum {
     P_INPUT = 0,
+#ifdef LENSYUM_BANNER
     P_BANNER,
+#endif
 
     P_CAMERA_TOPIC,
     P_LENS_PRESET,

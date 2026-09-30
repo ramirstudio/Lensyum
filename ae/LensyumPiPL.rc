@@ -58,7 +58,11 @@ BEGIN
         "OLGe",             /* global out flags */
         0L,
         4L,
-        33587200L,
+#ifdef LENSYUM_BANNER
+        33587200L,  /* DEEP_COLOR_AWARE | CUSTOM_UI */
+#else
+        33554432L,  /* DEEP_COLOR_AWARE */
+#endif
 
         "MIB8",
         "2LGe",             /* global out flags 2 */

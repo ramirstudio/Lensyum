@@ -19,21 +19,30 @@ set(PIPL_RC "${CMAKE_CURRENT_SOURCE_DIR}/LensyumPiPL.rc")
 # After Effects then ignores.
 enable_language(RC)
 
-# The banner at the top of the Effect Controls panel is a raw BGRA picture (8-byte width/height
-# header) embedded as a resource; the .rc is generated so it can name the file by absolute path.
-set(BANNER_BIN "${CMAKE_CURRENT_SOURCE_DIR}/LensyumBanner.bin")
-set(BANNER_RC "${CMAKE_CURRENT_BINARY_DIR}/LensyumBanner.rc")
-file(WRITE "${BANNER_RC}" "LENSYUM_BANNER RCDATA \"${BANNER_BIN}\"\n")
-set_source_files_properties("${BANNER_RC}" PROPERTIES OBJECT_DEPENDS "${BANNER_BIN}")
+# Experimental: a banner picture at the top of the Effect Controls panel (custom UI). Off by
+# default. The picture is a raw BGRA file (8-byte width/height header) embedded as a resource; the
+# .rc is generated so it can name the file by absolute path.
+option(LENSYUM_BANNER "Banner image in the Effect Controls panel (experimental)" OFF)
+set(BANNER_SOURCES "")
+if(LENSYUM_BANNER)
+    set(BANNER_BIN "${CMAKE_CURRENT_SOURCE_DIR}/LensyumBanner.bin")
+    set(BANNER_RC "${CMAKE_CURRENT_BINARY_DIR}/LensyumBanner.rc")
+    file(WRITE "${BANNER_RC}" "LENSYUM_BANNER RCDATA \"${BANNER_BIN}\"\n")
+    set_source_files_properties("${BANNER_RC}" PROPERTIES OBJECT_DEPENDS "${BANNER_BIN}")
+    set(BANNER_SOURCES "${BANNER_RC}")
+endif()
 
 add_library(Lensyum SHARED
     LensyumAE.cpp
     LensyumParams.h
     "${PIPL_RC}"
-    "${BANNER_RC}"
+    ${BANNER_SOURCES}
 )
 target_include_directories(Lensyum PRIVATE ${AE_HEADERS} "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(Lensyum PRIVATE MSWindows WIN32 _WINDOWS NOMINMAX _CRT_SECURE_NO_WARNINGS)
+if(LENSYUM_BANNER)
+    target_compile_definitions(Lensyum PRIVATE LENSYUM_BANNER)
+endif()
 target_compile_options(Lensyum PRIVATE /O2 /fp:fast /EHsc /W3)
 target_link_libraries(Lensyum PRIVATE lensyum_core)
 set_target_properties(Lensyum PROPERTIES SUFFIX ".aex" OUTPUT_NAME "Lensyum")
