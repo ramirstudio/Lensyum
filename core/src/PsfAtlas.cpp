@@ -23,7 +23,7 @@ uint64_t OpticsSettings::hash() const {
     h.add(lensPreset);
     h.add(lens.focalLengthMm); h.add(lens.fNumber); h.add(lens.focusDistanceMm);
     h.add(lens.dispersion); h.add(lens.vignetting);
-    h.add(impression); h.add(coma); h.add(astigmatismMm);
+    h.add(impression); h.add(impressionPower); h.add(coma); h.add(astigmatismMm); h.add(coverage);
     h.add(sensorWidthMm); h.add(frameWidthPx); h.add(frameHeightPx); h.add(pixelAspect);
     h.add(maxBlurPx); h.add(quality);
     return h.h;
@@ -97,7 +97,9 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
 
     const LensSystem L(lensPreset(s.lensPreset), s.lens);
     const double pxPerMm = s.frameWidthPx / std::max(s.sensorWidthMm, 1.0);
-    const double halfDiagMm = 0.5 * std::hypot(s.frameWidthPx * s.pixelAspect, s.frameHeightPx) / pxPerMm;
+    // Lens Coverage scales how much of the lens's field the frame uses: 0 = the centre everywhere,
+    // 2 = the corner character pulled towards the middle.
+    const double halfDiagMm = std::max(s.coverage, 0.0) * 0.5 * std::hypot(s.frameWidthPx * s.pixelAspect, s.frameHeightPx) / pxPerMm;
     const double k = L.marginalSlope();
     const double dist = std::min(L.focusDistance(), 1e7);
 
@@ -197,7 +199,7 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
                 // Impression: zonal spherical term that squeezes (hard rim) or spreads (soft disc) the
                 // outer zone of the pupil identically in front of and behind focus (signed defocus).
                 // The rim itself (rho = 1) stays put so the disc keeps its size.
-                const double zone = 0.45 * imp * (1.0 - rho2);
+                const double zone = 0.45 * imp * (1.0 - std::pow(std::max(rho2, 0.0), 0.5 * std::max(s.impressionPower, 0.5)));
                 const double ix = zone * vx, iy = zone * vy;
 
                 for (int b = 0; b < bands; ++b) {

@@ -11,6 +11,8 @@ enum {
     P_FORMAT,
     P_SENSOR_WIDTH,
     P_FSTOP,
+    P_FILMBACK_OFFSET,
+    P_COVERAGE,
     P_CAMERA_TOPIC_END,
 
     P_FOCUS_TOPIC,
@@ -37,6 +39,7 @@ enum {
 
     P_CREATIVE_TOPIC,
     P_IMPRESSION,
+    P_IMPRESSION_POWER,
     P_COMA,
     P_ASTIGMATISM,
     P_FIELD_CURVATURE,
@@ -44,6 +47,9 @@ enum {
     P_RIPPLE_DENSITY,
     P_LOBES,
     P_LOBE_COUNT,
+    P_LOBE_POWER,
+    P_LOBE_ANGLE,
+    P_LOBES_FACE_CENTER,
     P_CHROMATIC,
     P_CATEYE,
     P_SQUEEZE,
@@ -58,6 +64,7 @@ enum {
     P_HIGHLIGHT_TOPIC_END,
 
     P_RENDER_TOPIC,
+    P_BLEND_BACK,
     P_QUALITY,
     P_MAX_BLUR,
     P_LAYERS,
@@ -125,7 +132,14 @@ enum {
     ID_COLOR_MODE,
     ID_OPTICAL_CENTER,
     ID_VIEW,
-    ID_RENDER_TOPIC_END
+    ID_RENDER_TOPIC_END,
+    ID_FILMBACK_OFFSET,
+    ID_COVERAGE,
+    ID_IMPRESSION_POWER,
+    ID_LOBE_POWER,
+    ID_LOBE_ANGLE,
+    ID_LOBES_FACE_CENTER,
+    ID_BLEND_BACK
 };
 
 // Checkout IDs used between PreRender and SmartRender.

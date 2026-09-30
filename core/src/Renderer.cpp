@@ -172,6 +172,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         d2b = std::make_unique<DepthToBlur>(rs.optics, focus, df.nearMm, df.farMm);
     }
     const double fcPx = rs.fieldCurvatureMm * A.marginalSlope * A.pxPerMm;
+    const double filmPx = rs.filmbackOffsetMm * A.marginalSlope * A.pxPerMm;
     const double halfDiagFc = 0.5 * std::hypot(fm.layerW * par, fm.layerH);
     const double thr = rs.highlights.threshold;
     const double gain = std::max(rs.highlights.gain, 0.0);
@@ -194,6 +195,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
             const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
             double s = df.amountPx;
             if (useDepth) s = (*d2b)(depthToDistance(df, sampleDepth(df, lx / fm.layerW, ly / fm.layerH)));
+            s += filmPx;
             if (fcPx != 0.0) {
                 // Field curvature: the plane of focus bows, corners defocus by fieldCurvatureMm.
                 const double h2 = (((lx - fm.centerX) * par) * ((lx - fm.centerX) * par) + (ly - fm.centerY) * (ly - fm.centerY)) / (halfDiagFc * halfDiagFc);
@@ -301,7 +303,9 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
     // on the field angle, so kernels are baked once (3 floats per texel) and the inner loop is a
     // plain bilinear fetch. Otherwise the iris is applied per pixel and only the normalising mass
     // (measured with the iris at the reference angle) is precomputed.
-    const bool irisRound = rs.optics.aperture.isRound();
+    const ApertureShape& aper = rs.optics.aperture;
+    const bool lobesFace = aper.lobes > 0 && aper.lobesFaceCenter && aper.lobeCount >= 2;
+    const bool irisRound = aper.isRound();
     const size_t mipTotal = A.mips.size();
     std::vector<size_t> bakedOff(mipTotal, 0);
     size_t bakedSize = 0;
@@ -322,6 +326,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 if (light > 1e-12f) {
                     const float px = v[3] / light, py = v[4] / light;
                     tr = irisRound ? ap.sample(std::sqrt(px * px + py * py), 0.0) : ap.sample(kIrisSign * px, -kIrisSign * py);
+                    if (lobesFace && tr > 0 && std::sqrt(px * px + py * py) > aper.lobeEdge(px, py)) tr = 0;
                 }
                 for (int c = 0; c < 3; ++c) {
                     const float w = v[c] * tr;
@@ -411,7 +416,10 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 auto iris = [&](float pxu, float pyu) {
                     const double qx = pxu * ey + pyu * ex;
                     const double qy = -pxu * ex + pyu * ey;
-                    return ap.sample(kIrisSign * qx, -kIrisSign * qy);
+                    float t = ap.sample(kIrisSign * qx, -kIrisSign * qy);
+                    // Lobes that face the centre live in the entry frame, which turns with the field.
+                    if (lobesFace && t > 0 && std::sqrt(pxu * pxu + pyu * pyu) > aper.lobeEdge(pxu, pyu)) t = 0;
+                    return t;
                 };
                 auto kernel = [&](int i, int j, float* w3) {
                     const double qx = ax * (i + 0.5 - cxL), qy = ay * (j + 0.5 - cyL);
@@ -580,6 +588,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
 
     accTL.swap(levels[0].acc);
     lzMark("slices");
+    const float blend = static_cast<float>(clampv(rs.blendBack, 0.0, 1.0));
     // Renormalise by geometric coverage: fills the gaps left where hidden background would be.
     parallelFor(H, [&](int y) {
         for (int x = 0; x < W; ++x) {
@@ -589,6 +598,10 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 const float inv = 1.0f / o[4];
                 d[0] = o[0] * inv; d[1] = o[1] * inv; d[2] = o[2] * inv;
                 d[3] = std::min(o[3] * inv, 1.0f);
+                if (blend < 1.0f && rs.view == RenderSettings::kResult) {
+                    const float* sp = srcIn.px(x, y);
+                    for (int c = 0; c < 4; ++c) d[c] = sp[c] + (d[c] - sp[c]) * blend;
+                }
             } else {
                 d[0] = d[1] = d[2] = d[3] = 0.0f;
             }

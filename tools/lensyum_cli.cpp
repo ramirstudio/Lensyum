@@ -90,6 +90,12 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     o.aperture.lobes = a.num("lobes", 0.0);
     o.aperture.lobeCount = static_cast<int>(a.num("lobecount", 5));
     rs.fieldCurvatureMm = a.num("fc", 0.0);
+    rs.filmbackOffsetMm = a.num("film", 0.0);
+    rs.blendBack = a.num("blend", 1.0);
+    o.coverage = a.num("coverage", 1.0);
+    o.impressionPower = a.num("imppow", 3.0);
+    o.aperture.lobePower = a.num("lobepow", 3.0);
+    o.aperture.lobesFaceCenter = a.num("lobeface", 0) != 0;
     o.maxBlurPx = a.num("maxblur", 150.0);
     o.quality = static_cast<int>(a.num("quality", 1));
     rs.squeeze = a.num("squeeze", 1.0);

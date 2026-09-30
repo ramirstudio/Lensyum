@@ -38,6 +38,12 @@ float specks(double x, double y, double freq, uint32_t seed) {
 
 } // namespace
 
+double ApertureShape::lobeEdge(double x, double y) const {
+    const double phi = std::atan2(y, x) - lobeAngle;
+    const double bump = std::pow(0.5 + 0.5 * std::cos(lobeCount * phi), std::max(lobePower, 0.2));
+    return 1.0 - 0.3 * clampv(lobes, 0.0, 1.0) * (1.0 - bump);
+}
+
 float ApertureShape::transmission(double x, double y) const {
     const double r2 = x * x + y * y;
     if (r2 > 1.0) return 0.0f;
@@ -52,10 +58,8 @@ float ApertureShape::transmission(double x, double y) const {
         const double edge = lerp(polyR, 1.0, clampv(curvature, 0.0, 1.0));
         if (rho > edge) return 0.0f;
     }
-    if (lobes > 0 && lobeCount >= 2) {
-        const double phi = std::atan2(y, x) - rotationRad;
-        const double edge = 1.0 - 0.22 * clampv(lobes, 0.0, 1.0) * (0.5 - 0.5 * std::cos(lobeCount * phi));
-        if (rho > edge) return 0.0f;
+    if (lobes > 0 && lobeCount >= 2 && !lobesFaceCenter) {
+        if (rho > lobeEdge(x, y)) return 0.0f;
     }
     if (obstruction > 0 && rho < obstruction) return 0.0f;
 
@@ -90,7 +94,7 @@ float ApertureShape::transmission(double x, double y) const {
 
 void ApertureShape::hashInto(Hasher& h) const {
     h.add(blades); h.add(curvature); h.add(rotationRad); h.add(obstruction);
-    h.add(lobes); h.add(lobeCount); h.add(onion); h.add(onionFreq); h.add(texture); h.add(textureScale); h.add(textureSeed);
+    h.add(lobes); h.add(lobeCount); h.add(lobePower); h.add(lobeAngle); h.add(lobesFaceCenter); h.add(onion); h.add(onionFreq); h.add(texture); h.add(textureScale); h.add(textureSeed);
     h.add(maskW); h.add(maskH);
     if (!mask.empty()) h.bytes(mask.data(), mask.size() * sizeof(float));
 }

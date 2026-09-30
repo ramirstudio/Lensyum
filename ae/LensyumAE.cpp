@@ -59,6 +59,10 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("F-Stop", 0.7, 64, 0.7, 22, 2.8, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_FSTOP);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Filmback Offset (mm)", -20, 20, -1, 1, 0, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_FILMBACK_OFFSET);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Lens Coverage", 0, 3, 0, 3, 1, PF_Precision_THOUSANDTHS, PF_ValueDisplayFlag_NONE, 0, ID_COVERAGE);
+    AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_CAMERA_TOPIC_END);
 
     AEFX_CLR_STRUCT(def);
@@ -108,6 +112,8 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Impression", -100, 100, -100, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_IMPRESSION);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Impression Power", 0.5, 10, 0.5, 8, 3, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_IMPRESSION_POWER);
+    AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Coma", -100, 100, -100, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_COMA);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Astigmatism (mm)", -10, 10, -3, 3, 0, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_ASTIGMATISM);
@@ -120,7 +126,13 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Lobes", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_LOBES);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_SLIDER("Lobe Count", 2, 12, 2, 12, 5, ID_LOBE_COUNT);
+    PF_ADD_SLIDER("Lobe Count", 2, 12, 2, 12, 3, ID_LOBE_COUNT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Lobe Power", 0.2, 10, 0.2, 8, 3, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_LOBE_POWER);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_ANGLE("Lobe Angle", 0, ID_LOBE_ANGLE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Lobes Face Center", FALSE, 0, ID_LOBES_FACE_CENTER);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Chromatic Aberration", 0, 1000, 0, 500, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_CHROMATIC);
     AEFX_CLR_STRUCT(def);
@@ -147,6 +159,8 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Render", ID_RENDER_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Blend Back", 0, 1, 0, 1, 1, PF_Precision_THOUSANDTHS, PF_ValueDisplayFlag_NONE, 0, ID_BLEND_BACK);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Quality", 4, 2, "Draft|Normal|High|Best", ID_QUALITY);
     AEFX_CLR_STRUCT(def);
@@ -333,7 +347,7 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
     const double squeeze = std::max(pr.num(P_SQUEEZE), 1.0);
     const bool uniform = pr.num(P_DEFOCUS_MODE) < 2;
     const double amount = std::fabs(pr.num(P_DEFOCUS_AMOUNT)) * pr.num(P_DEFOCUS_SCALE) / 100.0;
-    const double fieldCurv = std::fabs(pr.num(P_FIELD_CURVATURE));
+    const double fieldCurv = std::fabs(pr.num(P_FIELD_CURVATURE)) + std::fabs(pr.num(P_FILMBACK_OFFSET));
     const int view = static_cast<int>(pr.num(P_VIEW));
     if (!pr.ok()) return pr.err();
 
@@ -453,6 +467,13 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         o.lens.vignetting = pr.num(P_CATEYE) / 100.0;
         o.lens.dispersion = pr.num(P_CHROMATIC) / 100.0;
         o.impression = pr.num(P_IMPRESSION) / 100.0;
+        o.impressionPower = pr.num(P_IMPRESSION_POWER);
+        o.coverage = pr.num(P_COVERAGE);
+        rs.filmbackOffsetMm = pr.num(P_FILMBACK_OFFSET);
+        rs.blendBack = pr.num(P_BLEND_BACK);
+        a.lobePower = pr.num(P_LOBE_POWER);
+        a.lobeAngle = pr.num(P_LOBE_ANGLE) * kPi / 180.0;
+        a.lobesFaceCenter = pr.num(P_LOBES_FACE_CENTER) != 0;
         o.coma = pr.num(P_COMA) / 100.0;
         o.astigmatismMm = pr.num(P_ASTIGMATISM);
         rs.fieldCurvatureMm = pr.num(P_FIELD_CURVATURE);

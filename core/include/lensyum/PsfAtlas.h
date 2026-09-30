@@ -16,10 +16,12 @@ struct OpticsSettings {
 
     // Character controls on top of the aberrations the prescription already has.
     double impression = 0.0;    // -1..1: negative = soft creamy disc, positive = hard bright rim
+    double impressionPower = 3.0; // how close to the rim the impression zone sits
     double coma = 0.0;          // -1..1: comet-shaped highlights towards the corners
     double astigmatismMm = 0.0; // focus split between radial and tangential foci at the corner,
                                 // in mm of sensor travel (edge bokeh stretches into lines)
 
+    double coverage = 1.0;      // how far into the frame the lens's edge character reaches (0..3)
     double sensorWidthMm = 36.0;
     double frameWidthPx = 1920, frameHeightPx = 1080; // full-resolution frame the sensor spans
     double pixelAspect = 1.0;

@@ -55,6 +55,8 @@ struct RenderSettings {
     FrameMapping frame;
     double squeeze = 1.0; // anamorphic squeeze: bokeh becomes an upright oval
     double fieldCurvatureMm = 0.0; // focus shift at the frame corner, mm of sensor travel
+    double filmbackOffsetMm = 0.0; // sensor moved along the axis: shifts focus everywhere
+    double blendBack = 1.0;        // 1 = full effect, 0 = original
     int layers = 12;      // depth slices for occlusion
     enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2 };
     int view = kResult;
