@@ -77,6 +77,20 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_STRCPY(def.PF_DEF_NAME, " ");
     def.uu.id = ID_BANNER;
     if (const PF_Err e = (*in_data->inter.add_param)(in_data->effect_ref, -1, &def)) return e;
+    // A custom UI must be registered, as in the SDK's Custom_ECW_UI sample; without this After
+    // Effects crashes when it builds the panel. Only the Effect Controls panel is used.
+    {
+        PF_CustomUIInfo ci;
+        AEFX_CLR_STRUCT(ci);
+        ci.events = PF_CustomEFlag_EFFECT;
+        ci.comp_ui_width = ci.comp_ui_height = 0;
+        ci.comp_ui_alignment = PF_UIAlignment_NONE;
+        ci.layer_ui_width = ci.layer_ui_height = 0;
+        ci.layer_ui_alignment = PF_UIAlignment_NONE;
+        ci.preview_ui_width = ci.preview_ui_height = 0;
+        ci.preview_ui_alignment = PF_UIAlignment_NONE;
+        if (const PF_Err e = (*in_data->inter.register_ui)(in_data->effect_ref, &ci)) return e;
+    }
 #endif
 
     AEFX_CLR_STRUCT(def);
