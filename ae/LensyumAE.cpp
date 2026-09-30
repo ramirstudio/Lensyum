@@ -518,7 +518,7 @@ void logStep(const char* what) {
 // Banner at the top of the Effect Controls panel
 // ------------------------------------------------------------------------------------
 
-// Raw BGRA picture embedded as the LENSYUM_BANNER resource: width and height (uint32 LE), pixels.
+// Raw BGRA picture embedded as the LZ_BANNER_IMAGE resource (not named after the LENSYUM_BANNER define, which the resource compiler would substitute): width and height (uint32 LE), pixels.
 struct BannerImage {
     int w = 0, h = 0;
     const unsigned char* bgra = nullptr;
@@ -531,7 +531,7 @@ const BannerImage& bannerImage() {
         HMODULE self = nullptr;
         if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                reinterpret_cast<LPCWSTR>(&pluginFolder), &self)) {
-            if (HRSRC res = FindResourceW(self, L"LENSYUM_BANNER", MAKEINTRESOURCEW(10)) /* RT_RCDATA */) {
+            if (HRSRC res = FindResourceW(self, L"LZ_BANNER_IMAGE", MAKEINTRESOURCEW(10)) /* RT_RCDATA */) {
                 const DWORD n = SizeofResource(self, res);
                 HGLOBAL mem = LoadResource(self, res);
                 const unsigned char* p = mem ? static_cast<const unsigned char*>(LockResource(mem)) : nullptr;
@@ -565,7 +565,7 @@ PF_Err drawBanner(PF_InData* in_data, PF_EventExtra* ev) {
     const BannerImage& bm = bannerImage();
     if (!bm.bgra) {
         static bool logged = false;
-        if (!logged) { logged = true; logLine("banner: resource LENSYUM_BANNER not found"); }
+        if (!logged) { logged = true; logLine("banner: resource LZ_BANNER_IMAGE not found"); }
         return PF_Err_NONE;
     }
     BannerSpan cur;
