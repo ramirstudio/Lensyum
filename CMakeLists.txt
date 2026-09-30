@@ -12,6 +12,15 @@ set(AE_SDK_DIR "" CACHE PATH "After Effects SDK root")
 # Folder with onnxruntime_c_api.h (from any ONNX Runtime package). Enables AI depth estimation;
 # the runtime itself is loaded at run time, nothing is linked.
 set(ORT_INCLUDE_DIR "" CACHE PATH "ONNX Runtime include folder")
+# Default location used in the README; picked up automatically when present.
+if(NOT ORT_INCLUDE_DIR AND EXISTS "C:/SDK/ort/build/native/include/onnxruntime_c_api.h")
+    set(ORT_INCLUDE_DIR "C:/SDK/ort/build/native/include" CACHE PATH "ONNX Runtime include folder" FORCE)
+endif()
+if(ORT_INCLUDE_DIR)
+    message(STATUS "Lensyum: AI depth enabled, ONNX Runtime headers in ${ORT_INCLUDE_DIR}")
+else()
+    message(STATUS "Lensyum: AI depth disabled (ORT_INCLUDE_DIR not set)")
+endif()
 option(LENSYUM_BUILD_TOOLS "Build the command-line test harness" ON)
 
 find_package(Threads REQUIRED)
