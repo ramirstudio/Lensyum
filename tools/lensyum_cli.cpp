@@ -6,6 +6,7 @@
 //   lensyum_cli image in.ppm out.ppm [depth=depth.pgm] [key=value ...]
 //   lensyum_cli lenses
 
+#include "lensyum/DepthAI.h"
 #include "lensyum/Renderer.h"
 
 #include <chrono>
@@ -249,7 +250,32 @@ int main(int argc, char** argv) {
             for (int k = 0; k < 3; ++k) src.rgba[i * 4 + k] = srgbToLinear(d[static_cast<size_t>(i) * c + (c == 3 ? k : 0)]);
             src.rgba[i * 4 + 3] = 1.0f;
         }
-        if (a.kv.count("depth")) {
+        if (a.kv.count("aimodel")) {
+            // AI depth: estimate the depth map from the picture itself.
+            DepthAIConfig cfg;
+            cfg.runtimeLib = a.str("ort", "libonnxruntime.so");
+            cfg.modelPath = a.str("aimodel", "");
+            std::string err;
+            std::vector<float> rgb(static_cast<size_t>(w) * h * 3);
+            for (int i = 0; i < w * h; ++i)
+                for (int k = 0; k < 3; ++k) rgb[static_cast<size_t>(i) * 3 + k] = d[static_cast<size_t>(i) * c + (c == 3 ? k : 0)];
+            const auto t0 = std::chrono::steady_clock::now();
+            if (!depthAIInit(cfg, err) ||
+                !depthAIEstimate(rgb.data(), w, h, static_cast<int>(a.num("aires", 518)), a.num("refine", 1) != 0, depth, err)) {
+                std::fprintf(stderr, "AI depth failed: %s\n", err.c_str());
+                return 1;
+            }
+            std::fprintf(stderr, "AI depth %.2fs\n", std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
+            rs.defocus.mode = DefocusSettings::kDepthMap;
+            rs.defocus.depth = depth.data(); rs.defocus.depthW = w; rs.defocus.depthH = h;
+            rs.defocus.whiteIsNear = true; rs.defocus.inverseDepth = true;
+            rs.defocus.nearMm = a.num("near", 0.5) * 1000; rs.defocus.farMm = a.num("far", 50) * 1000;
+            rs.defocus.focusMm = rs.optics.lens.focusDistanceMm;
+            if (a.kv.count("px")) {
+                rs.defocus.focusFromPoint = true;
+                rs.defocus.focusPointX = a.num("px", 0.5) * w; rs.defocus.focusPointY = a.num("py", 0.5) * h;
+            }
+        } else if (a.kv.count("depth")) {
             int dw, dh, dc;
             std::vector<float> dd;
             if (readPnm(a.str("depth", "").c_str(), dw, dh, dc, dd)) {

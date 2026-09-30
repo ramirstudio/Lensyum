@@ -83,7 +83,7 @@ struct RenderSettings {
     RainSettings rain;
     ShimmerSettings shimmer;
     int layers = 12;      // depth slices for occlusion
-    enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2 };
+    enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2, kDepthView = 3 };
     int view = kResult;
 };
 

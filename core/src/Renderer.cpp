@@ -212,6 +212,23 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         }
     });
 
+    if (rs.view == RenderSettings::kDepthView) {
+        // The depth the render uses, white = near; black when there is no depth map.
+        parallelFor(H, [&](int y) {
+            for (int x = 0; x < W; ++x) {
+                float v = 0.0f;
+                if (useDepth) {
+                    const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
+                    const double raw = sampleDepth(df, lx / fm.layerW, ly / fm.layerH);
+                    v = static_cast<float>(df.whiteIsNear ? raw : 1.0 - raw);
+                }
+                float* o = dst.px(x, y);
+                o[0] = o[1] = o[2] = v * v; // display as linear so mid-grey reads as mid-depth
+                o[3] = 1.0f;
+            }
+        });
+        return;
+    }
     if (rs.view == RenderSettings::kBlurMap) {
         parallelFor(H, [&](int y) {
             for (int x = 0; x < W; ++x) {

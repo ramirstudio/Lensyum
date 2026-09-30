@@ -12,6 +12,7 @@
 #include "SPBasic.h"
 
 #include "LensyumParams.h"
+#include "lensyum/DepthAI.h"
 #include "lensyum/Renderer.h"
 
 #include <algorithm>
@@ -68,7 +69,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Focus", ID_FOCUS_TOPIC);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Defocus Source", 3, 1, "Whole Frame|Depth Map|Focus Region", ID_DEFOCUS_MODE);
+    PF_ADD_POPUP("Defocus Source", 4, 1, "Whole Frame|Depth Map|Focus Region|AI Depth (auto)", ID_DEFOCUS_MODE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Defocus Amount (px)", -500, 500, -150, 150, 30, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_DEFOCUS_AMOUNT);
     AEFX_CLR_STRUCT(def);
@@ -105,6 +106,16 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ADD_CHECKBOXX("Focus On Point", FALSE, 0, ID_FOCUS_PICK);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_DEPTH_TOPIC_END);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC("AI Depth", ID_AI_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POPUP("Depth Detail", 4, 2, "Low|Medium|High|Ultra", ID_AI_DETAIL);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Edge Refine", TRUE, 0, ID_AI_REFINE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Use GPU", TRUE, 0, ID_AI_GPU);
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(ID_AI_TOPIC_END);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_FOCUS_TOPIC_END);
 
@@ -217,7 +228,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_POINT("Optical Center", 50, 50, FALSE, ID_OPTICAL_CENTER);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("View", 3, 1, "Result|Blur Map|Bokeh Grid", ID_VIEW);
+    PF_ADD_POPUP("View", 4, 1, "Result|Blur Map|Bokeh Grid|Depth Map", ID_VIEW);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_RENDER_TOPIC_END);
 
@@ -383,6 +394,28 @@ struct PreRenderData {
 
 void deletePreRenderData(void* p) { delete static_cast<PreRenderData*>(p); }
 
+// Folder the .aex lives in, with a trailing separator. AI depth files sit next to it.
+std::string pluginFolder() {
+#ifdef AE_OS_WIN
+    HMODULE self = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&pluginFolder), &self))
+        return std::string();
+    wchar_t buf[MAX_PATH * 2];
+    const DWORD n = GetModuleFileNameW(self, buf, MAX_PATH * 2);
+    std::wstring path(buf, n);
+    const size_t cut = path.find_last_of(L"\\/");
+    path = cut == std::wstring::npos ? std::wstring() : path.substr(0, cut + 1);
+    const int len = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(len > 0 ? len : 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, &out[0], len, nullptr, nullptr);
+    if (!out.empty() && out.back() == '\0') out.pop_back();
+    return out;
+#else
+    return std::string();
+#endif
+}
+
 inline double ratio(const PF_RationalScale& r) { return r.den ? double(r.num) / double(r.den) : 1.0; }
 
 PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* extra) {
@@ -390,7 +423,8 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
     ParamReader pr(in_data);
     const double maxBlur = pr.num(P_MAX_BLUR);
     const double squeeze = std::max(pr.num(P_SQUEEZE), 1.0);
-    const bool uniform = pr.num(P_DEFOCUS_MODE) != 2; // uniform and focus region never exceed the amount
+    const int defMode = static_cast<int>(pr.num(P_DEFOCUS_MODE));
+    const bool uniform = defMode != 2 && defMode != 4; // uniform and focus region never exceed the amount
     const double amount = std::fabs(pr.num(P_DEFOCUS_AMOUNT)) * pr.num(P_DEFOCUS_SCALE) / 100.0;
     const double fieldCurv = std::fabs(pr.num(P_FIELD_CURVATURE)) + std::fabs(pr.num(P_FILMBACK_OFFSET));
     const int view = static_cast<int>(pr.num(P_VIEW));
@@ -493,7 +527,11 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
 
         DefocusSettings& d = rs.defocus;
         const int mode = static_cast<int>(pr.num(P_DEFOCUS_MODE));
-        d.mode = mode == 2 ? DefocusSettings::kDepthMap : (mode == 3 ? DefocusSettings::kRegion : DefocusSettings::kUniform);
+        const bool aiDepth = mode == 4;
+        d.mode = (mode == 2 || aiDepth) ? DefocusSettings::kDepthMap : (mode == 3 ? DefocusSettings::kRegion : DefocusSettings::kUniform);
+        const int aiDetail = static_cast<int>(pr.num(P_AI_DETAIL));
+        const bool aiRefine = pr.num(P_AI_REFINE) != 0;
+        const bool aiGpu = pr.num(P_AI_GPU) != 0;
         d.regionRadiusPx = pr.num(P_REGION_RADIUS);
         d.regionFalloffPx = pr.num(P_REGION_FALLOFF);
         d.regionAspect = pr.num(P_REGION_ASPECT);
@@ -614,7 +652,55 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
                     }
                 }
 
+            // AI depth: estimate the depth of the layer itself (the buffer may include padding
+            // around it), then use it exactly like a depth layer, white = near, disparity.
+            std::vector<float> aiDepthBuf;
+            bool aiFailed = false;
+            if (aiDepth) {
+                const int lx0 = std::max(0, static_cast<int>(-prd->inRect.left));
+                const int ly0 = std::max(0, static_cast<int>(-prd->inRect.top));
+                const int lx1 = std::min(W, static_cast<int>(std::lround(prd->layerW * dsx - prd->inRect.left)));
+                const int ly1 = std::min(H, static_cast<int>(std::lround(prd->layerH * dsy - prd->inRect.top)));
+                const int cw = lx1 - lx0, ch = ly1 - ly0;
+                std::string aiErr;
+                DepthAIConfig cfg;
+                cfg.runtimeLib = pluginFolder() + "lensyum_ort.dll";
+                cfg.modelPath = pluginFolder() + "lensyum_depth.onnx";
+                cfg.useGpu = aiGpu;
+                if (cw > 1 && ch > 1 && depthAIInit(cfg, aiErr)) {
+                    std::vector<float> rgb(static_cast<size_t>(cw) * ch * 3);
+                    for (int y = 0; y < ch; ++y)
+                        for (int x = 0; x < cw; ++x) {
+                            const float* p = src.px(x + lx0, y + ly0);
+                            const float ia = p[3] > 0 ? 1.0f / p[3] : 0.0f;
+                            for (int c = 0; c < 3; ++c) rgb[(static_cast<size_t>(y) * cw + x) * 3 + c] = srgbEncode(std::max(p[c] * ia, 0.0f));
+                        }
+                    const int sides[4] = {392, 518, 770, 1022};
+                    aiFailed = !depthAIEstimate(rgb.data(), cw, ch, sides[std::min(std::max(aiDetail, 1), 4) - 1], aiRefine, aiDepthBuf, aiErr);
+                } else {
+                    aiFailed = true;
+                }
+                if (!aiFailed) {
+                    d.depth = aiDepthBuf.data();
+                    d.depthW = cw;
+                    d.depthH = ch;
+                    d.whiteIsNear = true;
+                    d.inverseDepth = true;
+                } else {
+                    d.mode = DefocusSettings::kUniform;
+                    d.amountPx = 0.0;
+                }
+            }
+
             renderDefocus(src, dst, rs);
+
+            // Missing model or runtime: show the untouched frame with a red cast so it is obvious.
+            if (aiFailed)
+                for (int y = 0; y < H; ++y)
+                    for (int x = 0; x < W; ++x) {
+                        float* p = dst.px(x, y);
+                        p[1] *= 0.55f; p[2] *= 0.55f;
+                    }
 
             const A_long ox = prd->outRect.left - prd->inRect.left;
             const A_long oy = prd->outRect.top - prd->inRect.top;

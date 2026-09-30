@@ -16,6 +16,8 @@ Camera: preset dell'obiettivo (ogni preset ha la sua focale), formato del sensor
 
 Focus: sorgente della sfocatura (uniforme, mappa di profondità oppure Focus Region, dove scegli il punto nitido con Focus Point, quanto è grande la zona nitida con Region Radius, quanto è graduale il passaggio con Region Falloff e la forma con Region Aspect, mentre Defocus Amount decide quanto sfocare il resto), layer di profondità con polarità e codifica (distanza lineare o disparità 1/z, il formato tipico delle mappe generate da AI), distanze near/far in metri, distanza di messa a fuoco oppure messa a fuoco su un punto campionato dalla mappa, scala della sfocatura.
 
+AI Depth (auto) stima la profondità direttamente dalla clip con una rete Depth Anything V2 eseguita in locale su GPU (DirectML), fotogramma per fotogramma, senza bisogno di un layer di profondità. Depth Detail sceglie la risoluzione di analisi (Low 392, Medium 518, High 770, Ultra 1022 pixel sul lato lungo), Edge Refine ammorbidisce la mappa seguendo i bordi dell'immagine, Use GPU passa alla CPU se disattivato. La vista Depth Map mostra la profondità usata (bianco vicino, nero lontano). La mappa è normalizzata su ogni fotogramma, quindi su riprese con movimenti forti può oscillare leggermente.
+
 Aperture: forma (iride a lamelle oppure cuore, stella, triangolo, rombo, croce, anello, mezzaluna), numero di lamelle, curvatura, rotazione, ostruzione centrale (bokeh a ciambella degli obiettivi catadiottrici), layer da usare come apertura personalizzata.
 
 Creative: Impression (positivo bordo netto e luminoso, negativo disco morbido), Coma, Astigmatism in millimetri di spostamento del fuoco tra direzione radiale e tangenziale all'angolo, Field Curvature in millimetri (gli angoli vanno fuori fuoco), Zonal Ripple con densità (anelli concentrici), Lobes con numero, forma, angolo e orientamento verso il centro, aberrazione cromatica attivabile (Bokeh Fringing per le frange colorate sui dischi, Lateral CA per lo spostamento rosso/blu verso i bordi che si vede anche sulle zone nitide), Cat-Eye (vignettatura meccanica), squeeze anamorfico, Bokeh Imperfections (polvere e grana dentro i dischi) con scala e seed, Lens Coverage, Filmback Offset.
@@ -43,6 +45,8 @@ cmake --build build --config Release --target Lensyum
 
 Il file `build\ae\Release\Lensyum.aex` va copiato in `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\` (anche in una sottocartella). Aggiungendo `-DLENSYUM_INSTALL_DIR="C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/Lensyum"` la copia avviene a ogni build (serve il prompt come amministratore). L'effetto compare in Effetti > Lensyum.
 
+Per AI Depth servono ONNX Runtime e il modello, che non sono nel repository. Scarica il pacchetto NuGet `Microsoft.ML.OnnxRuntime.DirectML` da nuget.org (è uno zip con estensione `.nupkg`) ed estrailo. Compila aggiungendo `-DORT_INCLUDE_DIR="<cartella estratta>/build/native/include"` al primo comando cmake. Nella cartella dove hai messo `Lensyum.aex` copia `runtimes/win-x64/native/onnxruntime.dll` rinominandolo `lensyum_ort.dll` e `DirectML.dll` (stesso pacchetto o pacchetto NuGet `Microsoft.AI.DirectML`, `bin/x64-win/DirectML.dll`). Scarica poi `onnx/model.onnx` da `huggingface.co/onnx-community/depth-anything-v2-small` (licenza Apache 2.0), rinominalo `lensyum_depth.onnx` e mettilo nella stessa cartella. Se qualcosa manca, con AI Depth attivo l'immagine diventa rossastra.
+
 ## Provare il motore senza After Effects
 
 ```
@@ -54,7 +58,7 @@ build/lensyum_cli scene scena.ppm focus=3 N=2 gain=8
 build/lensyum_cli image foto.ppm out.ppm depth=profondita.pgm focus=2.5
 ```
 
-Le opzioni sono coppie `chiave=valore` (`lens`, `N`, `focus` in metri, `sensor`, `blades`, `curv`, `rot`, `obst`, `mask=file.pgm`, `onion`, `lobes`, `lobecount`, `texture`, `cateye`, `ca`, `imp`, `coma`, `astig` e `fc` in mm, `squeeze`, `gain`, `thr`, `amount`, `quality`, `maxblur`, `layers`, `view`).
+Le opzioni sono coppie `chiave=valore` (`lens`, `N`, `focus` in metri, `sensor`, `blades`, `curv`, `rot`, `obst`, `mask=file.pgm`, `onion`, `lobes`, `lobecount`, `texture`, `cateye`, `ca`, `imp`, `coma`, `astig` e `fc` in mm, `squeeze`, `gain`, `thr`, `amount`, `quality`, `maxblur`, `layers`, `view`; per la profondità AI `aimodel=modello.onnx`, `ort=libreria onnxruntime`, `aires`, `refine`).
 
 ## Stato
 

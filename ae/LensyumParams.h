@@ -35,6 +35,11 @@ enum {
     P_DEPTH_FAR,
     P_FOCUS_PICK,
     P_DEPTH_TOPIC_END,
+    P_AI_TOPIC,
+    P_AI_DETAIL,
+    P_AI_REFINE,
+    P_AI_GPU,
+    P_AI_TOPIC_END,
     P_FOCUS_TOPIC_END,
 
     P_APERTURE_TOPIC,
@@ -184,7 +189,12 @@ enum {
     ID_LAYERS_TOPIC_END,
     ID_OBSTRUCTION_SOFT,
     ID_REGION_KEEP,
-    ID_RAIN_ENABLE
+    ID_RAIN_ENABLE,
+    ID_AI_TOPIC,
+    ID_AI_DETAIL,
+    ID_AI_REFINE,
+    ID_AI_GPU,
+    ID_AI_TOPIC_END
 };
 
 // Checkout IDs used between PreRender and SmartRender.
