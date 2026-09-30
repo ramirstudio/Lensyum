@@ -1001,8 +1001,8 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
 }
 
 PF_Err About(PF_InData* in_data, PF_OutData* out_data) {
-    PF_SPRINTF(out_data->return_msg, "%s %d.%d\rPhysically based lens defocus: real lens prescriptions, ray-traced bokeh.",
-               LENSYUM_NAME, LENSYUM_MAJOR, LENSYUM_MINOR);
+    PF_SPRINTF(out_data->return_msg, "%s %d.%d (build %s %s)\rPhysically based lens defocus: real lens prescriptions, ray-traced bokeh.",
+               LENSYUM_NAME, LENSYUM_MAJOR, LENSYUM_MINOR, __DATE__, __TIME__);
     return PF_Err_NONE;
 }
 
@@ -1029,6 +1029,14 @@ extern "C" DllExport PF_Err PluginDataEntryFunction2(PF_PluginDataPtr inPtr, PF_
 extern "C" DllExport PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[],
                                        PF_LayerDef* output, void* extra) {
     PF_Err err = PF_Err_NONE;
+    {
+        // Each command number is written to the log the first time it arrives.
+        static unsigned long long seen = 0;
+        if (cmd >= 0 && cmd < 64 && !(seen & (1ULL << cmd))) {
+            seen |= 1ULL << cmd;
+            logLine(std::string("build ") + __DATE__ + " " + __TIME__ + ": first command " + std::to_string(static_cast<int>(cmd)));
+        }
+    }
     try {
         switch (cmd) {
         case PF_Cmd_ABOUT: err = About(in_data, out_data); break;
