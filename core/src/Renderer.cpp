@@ -97,6 +97,52 @@ private:
     double invNear_, invFar_, minD_;
 };
 
+// Mirrors a coordinate that is expressed as a fraction of the layer back into 0..1.
+inline double reflectUnit(double u) {
+    u = std::fabs(u);
+    u = std::fmod(u, 2.0);
+    return u > 1.0 ? 2.0 - u : u;
+}
+
+// Index mirrored back into [lo, hi]; the edge pixel repeats once, like a reflection in the edge.
+inline int reflectIndex(int i, int lo, int hi) {
+    const int n = hi - lo + 1;
+    if (n <= 1) return lo;
+    int t = (i - lo) % (2 * n);
+    if (t < 0) t += 2 * n;
+    if (t >= n) t = 2 * n - 1 - t;
+    return lo + t;
+}
+
+// A depth edge between a nearer and a farther surface carries in-between depths. When the two
+// surfaces lie on either side of the plane of focus those pixels come out in focus and trace a
+// thin sharp outline. A pixel whose blur is much smaller than the blur k pixels away on two
+// opposite sides, with opposite signs, takes the nearer surface's blur instead.
+void cleanBlurField(std::vector<Source>& srcs, int W, int H, int k) {
+    std::vector<float> s0(static_cast<size_t>(W) * H);
+    for (size_t i = 0; i < s0.size(); ++i) s0[i] = srcs[i].s;
+    static const int dirs[4][2] = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
+    parallelFor(H, [&](int y) {
+        for (int x = 0; x < W; ++x) {
+            const float ac = std::fabs(s0[static_cast<size_t>(y) * W + x]);
+            float best = 0.0f;
+            bool hit = false;
+            for (const auto& d : dirs) {
+                const size_t ia = static_cast<size_t>(clampv(y + d[1] * k, 0, H - 1)) * W + clampv(x + d[0] * k, 0, W - 1);
+                const size_t ib = static_cast<size_t>(clampv(y - d[1] * k, 0, H - 1)) * W + clampv(x - d[0] * k, 0, W - 1);
+                const float a = s0[ia], b = s0[ib];
+                if (a * b >= 0.0f) continue;
+                const float lo = std::min(std::fabs(a), std::fabs(b));
+                if (lo < 2.0f || ac >= 0.5f * lo) continue;
+                const float near = std::min(a, b);
+                if (!hit || near < best) best = near;
+                hit = true;
+            }
+            if (hit) srcs[static_cast<size_t>(y) * W + x].s = best;
+        }
+    });
+}
+
 struct LevelBuffer {
     int w = 0, h = 0;
     std::vector<float> acc;
@@ -105,7 +151,9 @@ struct LevelBuffer {
 
 } // namespace
 
-void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
+// crop: {x0, y0, x1, y1} (inclusive) is the part of the buffer whose result is needed; discs are only
+// drawn inside it, so sources that live in a mirrored border cost nothing unless they reach it.
+static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsIn, const int* crop) {
     RenderSettings rs = rsIn;
     const bool lzTime = std::getenv("LENSYUM_TIME") != nullptr;
     auto lzT0 = std::chrono::steady_clock::now();
@@ -113,6 +161,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
     const int W = srcIn.width, H = srcIn.height;
     dst.resize(W, H);
     if (W <= 0 || H <= 0) return;
+    const int cropR[4] = {crop ? crop[0] : 0, crop ? crop[1] : 0, crop ? crop[2] : W - 1, crop ? crop[3] : H - 1};
 
     const FrameMapping& fm = rs.frame;
     const double dsx = std::max(fm.downsampleX, 1e-3), dsy = std::max(fm.downsampleY, 1e-3);
@@ -195,7 +244,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
 
             const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
             double s = df.amountPx;
-            if (useDepth) s = (*d2b)(depthToDistance(df, sampleDepth(df, lx / fm.layerW, ly / fm.layerH)));
+            if (useDepth) s = (*d2b)(depthToDistance(df, sampleDepth(df, reflectUnit(lx / fm.layerW), reflectUnit(ly / fm.layerH))));
             else if (df.mode == DefocusSettings::kRegion) {
                 const double rx = (lx - df.focusPointX) / std::max(df.regionAspect, 0.05), ry = ly - df.focusPointY;
                 const double d = std::sqrt(rx * rx + ry * ry);
@@ -211,6 +260,8 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
             S.s = static_cast<float>(clampv(s, -maxBlur, maxBlur));
         }
     });
+    if (useDepth && df.edgeCleanPx > 0.0)
+        cleanBlurField(srcs, W, H, std::max(1, static_cast<int>(std::lround(df.edgeCleanPx * std::max(dsx, dsy)))));
 
     if (rs.view == RenderSettings::kDepthView) {
         // The depth the render uses, white = near; black when there is no depth map.
@@ -219,7 +270,7 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 float v = 0.0f;
                 if (useDepth) {
                     const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
-                    const double raw = sampleDepth(df, lx / fm.layerW, ly / fm.layerH);
+                    const double raw = sampleDepth(df, reflectUnit(lx / fm.layerW), reflectUnit(ly / fm.layerH));
                     v = static_cast<float>(df.whiteIsNear ? raw : 1.0 - raw);
                 }
                 float* o = dst.px(x, y);
@@ -571,8 +622,10 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         const int bandH = 16;
         const int bands = (lb.h + bandH - 1) / bandH;
 
+        const int cx0L = cropR[0] >> L, cy0L = cropR[1] >> L, cx1L = cropR[2] >> L, cy1L = cropR[3] >> L;
         parallelFor(bands, [&](int band) {
             const int by0 = band * bandH, by1 = std::min(lb.h, by0 + bandH);
+            if (by1 <= cy0L || by0 > cy1L) return;
             // Splats whose footprint may touch this band (list is sorted by y).
             const float yLo = static_cast<float>((by0 - maxHy - 1) * scaleL);
             const float yHi = static_cast<float>((by1 + maxHy + 1) * scaleL);
@@ -639,8 +692,8 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
                 // Full footprint (for normalisation) and its part inside the buffer (for writing).
                 const int ux0 = static_cast<int>(std::floor(cxL - hx)), ux1 = static_cast<int>(std::ceil(cxL + hx));
                 const int uy0 = static_cast<int>(std::floor(cyL - hy)), uy1 = static_cast<int>(std::ceil(cyL + hy));
-                const int fx0 = std::max(0, ux0), fx1 = std::min(lb.w - 1, ux1);
-                const int fy0 = std::max(0, uy0), fy1 = std::min(lb.h - 1, uy1);
+                const int fx0 = std::max(std::max(0, ux0), cx0L), fx1 = std::min(std::min(lb.w - 1, ux1), cx1L);
+                const int fy0 = std::max(std::max(0, uy0), cy0L), fy1 = std::min(std::min(lb.h - 1, uy1), cy1L);
                 const int ry0 = std::max(fy0, by0), ry1 = std::min(fy1, by1 - 1);
                 if (ry0 > ry1 || fx0 > fx1) continue;
 
@@ -930,6 +983,92 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
             }
         });
     }
+}
+
+namespace {
+
+// Largest blur radius the render can use, in layer pixels, without looking at the picture.
+double blurReachPx(const RenderSettings& rs) {
+    const double maxBlur = std::max(rs.optics.maxBlurPx, 1.0);
+    const DefocusSettings& d = rs.defocus;
+    if (rs.view == RenderSettings::kBokehGrid || rs.fieldCurvatureMm != 0.0 || rs.filmbackOffsetMm != 0.0) return maxBlur;
+    double r = std::fabs(d.amountPx) * d.scale;
+    if (d.mode == DefocusSettings::kDepthMap && d.depth && d.depthW > 0 && d.depthH > 0) {
+        float lo = 1e30f, hi = -1e30f;
+        const size_t n = static_cast<size_t>(d.depthW) * d.depthH;
+        for (size_t i = 0; i < n; ++i) { lo = std::min(lo, d.depth[i]); hi = std::max(hi, d.depth[i]); }
+        OpticsSettings o = rs.optics;
+        o.frameWidthPx = rs.frame.layerW;
+        o.frameHeightPx = rs.frame.layerH;
+        double focus = d.focusMm;
+        if (d.focusFromPoint) focus = depthToDistance(d, sampleDepth(d, d.focusPointX / rs.frame.layerW, d.focusPointY / rs.frame.layerH));
+        const DepthToBlur b(o, focus, d.nearMm, d.farMm);
+        // Blur runs monotonically with distance on each side of focus, so the two ends bound it.
+        r = std::max(std::fabs(b(depthToDistance(d, lo))), std::fabs(b(depthToDistance(d, hi)))) * d.scale;
+    }
+    return std::min(r, maxBlur);
+}
+
+} // namespace
+
+// Light from outside the picture never exists, so near the layer's edges the discs would have
+// nothing to gather from on one side: they would fade, or fall back to the unblurred picture.
+// The layer is continued past its edges by reflection (whatever transparent padding After
+// Effects handed over is replaced), rendered, and cropped back to the layer.
+void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rs) {
+    const int W = srcIn.width, H = srcIn.height;
+    const FrameMapping& fm = rs.frame;
+    const double dsx = std::max(fm.downsampleX, 1e-3), dsy = std::max(fm.downsampleY, 1e-3);
+    // Layer rectangle in buffer pixels; a side is an edge when it falls inside the buffer.
+    const int lx0 = static_cast<int>(std::lround(-fm.originX)), lx1 = static_cast<int>(std::lround(fm.layerW * dsx - fm.originX));
+    const int ly0 = static_cast<int>(std::lround(-fm.originY)), ly1 = static_cast<int>(std::lround(fm.layerH * dsy - fm.originY));
+    const bool edgeL = lx0 >= 0 && lx0 < W, edgeR = lx1 > 0 && lx1 <= W;
+    const bool edgeT = ly0 >= 0 && ly0 < H, edgeB = ly1 > 0 && ly1 <= H;
+    const double reachBuf = blurReachPx(rs) * std::max(dsx, dsy);
+    const int e = std::min(static_cast<int>(std::ceil(1.35 * reachBuf)) + 4, 600);
+    if (W <= 0 || H <= 0 || reachBuf < 1.0 || !(edgeL || edgeR || edgeT || edgeB) || lx1 <= lx0 || ly1 <= ly0) {
+        renderCore(srcIn, dst, rs, nullptr);
+        return;
+    }
+    // Real layer pixels inside the buffer (inclusive); other sides of the buffer are not layer edges.
+    const int vx0 = edgeL ? lx0 : 0, vx1 = (edgeR ? lx1 : W) - 1;
+    const int vy0 = edgeT ? ly0 : 0, vy1 = (edgeB ? ly1 : H) - 1;
+    const int el = edgeL ? e : 0, er = edgeR ? e : 0, et = edgeT ? e : 0, eb = edgeB ? e : 0;
+    const int EW = W + el + er, EH = H + et + eb;
+
+    Image ext;
+    ext.resize(EW, EH);
+    parallelFor(EH, [&](int Y) {
+        const int y = Y - et;
+        const int sy = (edgeT && y < vy0) || (edgeB && y > vy1) ? reflectIndex(y, vy0, vy1) : clampv(y, 0, H - 1);
+        for (int X = 0; X < EW; ++X) {
+            const int x = X - el;
+            const int sx = (edgeL && x < vx0) || (edgeR && x > vx1) ? reflectIndex(x, vx0, vx1) : clampv(x, 0, W - 1);
+            const float* p = srcIn.px(sx, sy);
+            float* q = ext.px(X, Y);
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; q[3] = p[3];
+        }
+    });
+    RenderSettings rsE = rs;
+    rsE.frame.originX = fm.originX - el;
+    rsE.frame.originY = fm.originY - et;
+    // Refraction and lateral CA read a little way past each pixel, so render a guard band too.
+    const double ds = std::max(dsx, dsy);
+    const int guard = 8 + static_cast<int>(std::ceil(ds * (rs.rain.strength > 0 ? 5.0 * rs.rain.refractPx : 0.0) + 2.0 * std::fabs(rs.lateralCaPx) * ds));
+    const int crop[4] = {std::max(0, el - guard), std::max(0, et - guard), std::min(EW - 1, el + W - 1 + guard), std::min(EH - 1, et + H - 1 + guard)};
+    Image extOut;
+    renderCore(ext, extOut, rsE, crop);
+
+    dst.resize(W, H);
+    parallelFor(H, [&](int y) {
+        for (int x = 0; x < W; ++x) {
+            float* q = dst.px(x, y);
+            const bool outside = (edgeL && x < vx0) || (edgeR && x > vx1) || (edgeT && y < vy0) || (edgeB && y > vy1);
+            if (outside) { q[0] = q[1] = q[2] = q[3] = 0.0f; continue; }
+            const float* p = extOut.px(x + el, y + et);
+            q[0] = p[0]; q[1] = p[1]; q[2] = p[2]; q[3] = p[3];
+        }
+    });
 }
 
 } // namespace lensyum

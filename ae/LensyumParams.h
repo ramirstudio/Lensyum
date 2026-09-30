@@ -28,6 +28,7 @@ enum {
     P_FOCUS_POINT,
     P_FOCUS_DISTANCE,
     P_DEFOCUS_SCALE,
+    P_EDGE_CLEAN,
     P_REGION_TOPIC,
     P_REGION_RADIUS,
     P_REGION_FALLOFF,
@@ -224,7 +225,8 @@ enum {
     ID_3D_YAW,
     ID_3D_PITCH,
     ID_3D_RELIEF,
-    ID_3D_TOPIC_END
+    ID_3D_TOPIC_END,
+    ID_EDGE_CLEAN
 };
 
 // Checkout IDs used between PreRender and SmartRender.

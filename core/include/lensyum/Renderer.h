@@ -37,6 +37,9 @@ struct DefocusSettings {
     double focusPointX = 0, focusPointY = 0; // full-resolution layer pixels
 
     double scale = 1.0; // artistic multiplier on the computed blur
+    // Depth maps: outlines that trace a depth edge and come out in focus are replaced by the nearer
+    // surface's blur. Distance in layer pixels over which a pixel looks for the two surfaces (0 = off).
+    double edgeCleanPx = 3.0;
 };
 
 struct HighlightSettings {

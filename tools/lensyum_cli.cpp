@@ -127,6 +127,7 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     rs.highlights.gain = a.num("gain", 0.0);
     rs.defocus.amountPx = a.num("amount", 30.0);
     rs.defocus.scale = a.num("scale", 1.0);
+    rs.defocus.edgeCleanPx = a.num("edgeclean", 3.0);
     rs.layers = static_cast<int>(a.num("layers", 12));
     rs.view = static_cast<int>(a.num("view", 0));
     rs.view3dYawDeg = a.num("yaw", 30); rs.view3dPitchDeg = a.num("pitch", 20); rs.view3dRelief = a.num("relief", 0.6);
@@ -304,11 +305,40 @@ int main(int argc, char** argv) {
         rs.defocus.focusPointY = a.num("py", 0.5) * src.height;
     }
 
+    // pad=N embeds the picture in a transparent border of N pixels, the way After Effects hands the
+    // layer to the effect when the blur needs room; the result is cropped back to the picture.
+    const int pad = static_cast<int>(a.num("pad", 0));
+    const int layerW = src.width, layerH = src.height;
+    Image padded;
+    const Image* srcPtr = &src;
+    if (pad > 0) {
+        padded.resize(layerW + 2 * pad, layerH + 2 * pad);
+        for (int y = 0; y < layerH; ++y)
+            for (int x = 0; x < layerW; ++x) {
+                const float* p = src.px(x, y);
+                float* q = padded.px(x + pad, y + pad);
+                for (int k = 0; k < 4; ++k) q[k] = p[k];
+            }
+        rs.frame.originX = -pad;
+        rs.frame.originY = -pad;
+        srcPtr = &padded;
+    }
     Image out;
     const auto t0 = std::chrono::steady_clock::now();
-    acquirePsfAtlas([&] { OpticsSettings o = rs.optics; o.frameWidthPx = src.width; o.frameHeightPx = src.height; return o; }());
+    acquirePsfAtlas([&] { OpticsSettings o = rs.optics; o.frameWidthPx = layerW; o.frameHeightPx = layerH; return o; }());
     const auto t1 = std::chrono::steady_clock::now();
-    renderDefocus(src, out, rs);
+    renderDefocus(*srcPtr, out, rs);
+    if (pad > 0 && a.num("keeppad", 0) == 0) {
+        Image cropped;
+        cropped.resize(layerW, layerH);
+        for (int y = 0; y < layerH; ++y)
+            for (int x = 0; x < layerW; ++x) {
+                const float* p = out.px(x + pad, y + pad);
+                float* q = cropped.px(x, y);
+                for (int k = 0; k < 4; ++k) q[k] = p[k];
+            }
+        out = cropped;
+    }
     const auto t2 = std::chrono::steady_clock::now();
     std::fprintf(stderr, "atlas %.2fs  render %.2fs  (%dx%d)\n", std::chrono::duration<double>(t1 - t0).count(),
                  std::chrono::duration<double>(t2 - t1).count(), out.width, out.height);

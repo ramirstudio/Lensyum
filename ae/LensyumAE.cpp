@@ -101,6 +101,8 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Defocus Scale", 0, 1000, 0, 300, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_DEFOCUS_SCALE);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Depth Edge Clean-up (px)", 0, 12, 0, 12, 3, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_EDGE_CLEAN);
+    AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Focus Region", ID_REGION_TOPIC);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Region Radius (px)", 0, 10000, 0, 1500, 300, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_RADIUS);
@@ -595,6 +597,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         d.focusPointX = fpx / dsx; // point values arrive at the current downsample
         d.focusPointY = fpy / dsy;
         d.scale = pr.num(P_DEFOCUS_SCALE) / 100.0;
+        d.edgeCleanPx = pr.num(P_EDGE_CLEAN);
         o.lens.focusDistanceMm = d.focusMm;
 
         ApertureShape& a = o.aperture;
