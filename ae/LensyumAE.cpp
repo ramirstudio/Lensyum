@@ -19,6 +19,7 @@
 #include "lensyum/Renderer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -46,6 +47,9 @@ const double kFormatWidths[] = {36.0, 24.89, 23.6, 17.3, 12.52, 54.12};
 constexpr int kFormatCount = 7;
 constexpr int kBannerUiWidth = 200;  // hint only: the banner is drawn across the whole row
 constexpr int kBannerUiHeight = 150;
+
+void logLine(const std::string& text);
+void logStep(const char* what);
 
 const std::string& lensPopupString() {
     static const std::string s = [] {
@@ -289,6 +293,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_END_TOPIC(ID_RENDER_TOPIC_END);
 
     out_data->num_params = P_COUNT;
+    logStep("ParamsSetup done");
     return PF_Err_NONE;
 }
 
@@ -531,6 +536,12 @@ void logLine(const std::string& text) {
 #endif
 }
 
+// Progress marks for the first calls of each process, so a crash can be placed from the log.
+void logStep(const char* what) {
+    static std::atomic<int> count{0};
+    if (count.fetch_add(1) < 160) logLine(what);
+}
+
 // The banner is one picture spread over the parameter's title area and its control area: each
 // draw event paints its own share, sized to the whole row (cover fit, centred).
 PF_Err drawBanner(PF_InData* in_data, PF_EventExtra* ev) {
@@ -654,6 +665,7 @@ inline double ratio(const PF_RationalScale& r) { return r.den ? double(r.num) / 
 
 PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* extra) {
     PF_Err err = PF_Err_NONE;
+    logStep("PreRender begin");
     ParamReader pr(in_data);
     const double maxBlur = pr.num(P_MAX_BLUR);
     const double squeeze = std::max(pr.num(P_SQUEEZE), 1.0);
@@ -722,11 +734,13 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
     if (prd->par <= 0) prd->par = ratio(in_data->pixel_aspect_ratio);
     extra->output->pre_render_data = prd;
     extra->output->delete_pre_render_data_func = deletePreRenderData;
+    logStep("PreRender end");
     return err;
 }
 
 PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra* extra) {
     PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
+    logStep("SmartRender begin");
     const PreRenderData* prd = static_cast<const PreRenderData*>(extra->input->pre_render_data);
     if (!prd) return PF_Err_BAD_CALLBACK_PARAM;
 
@@ -748,6 +762,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         if (apW) ERR(pixelFormat(in_data, apW, ap.fmt));
         if (rainW) ERR(pixelFormat(in_data, rainW, rain.fmt));
 
+        logStep("SmartRender worlds ready");
         ParamReader pr(in_data);
         RenderSettings rs;
         OpticsSettings& o = rs.optics;
@@ -961,7 +976,9 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
                 }
             }
 
+            logStep("SmartRender before renderDefocus");
             renderDefocus(src, dst, rs);
+            logStep("SmartRender after renderDefocus");
 
             // Missing model or runtime: show the frame flat red so it cannot be mistaken for an effect.
             if (aiFailed)
@@ -993,6 +1010,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         }
     }
 
+    logStep("SmartRender copied output");
     ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_INPUT));
     if (depthW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_DEPTH));
     if (apW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_APERTURE));
@@ -1007,6 +1025,7 @@ PF_Err About(PF_InData* in_data, PF_OutData* out_data) {
 }
 
 PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data) {
+    logStep("GlobalSetup");
     out_data->my_version = PF_VERSION(LENSYUM_MAJOR, LENSYUM_MINOR, LENSYUM_BUG, PF_Stage_DEVELOP, LENSYUM_BUILD);
     // Must match AE_Effect_Global_OutFlags / _2 in LensyumPiPL.r (and the 'global out flags' values in LensyumPiPL.rc).
     out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_CUSTOM_UI;
@@ -1048,8 +1067,10 @@ extern "C" DllExport PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutDat
         default: break;
         }
     } catch (const std::bad_alloc&) {
+        logLine("exception: out of memory");
         err = PF_Err_OUT_OF_MEMORY;
     } catch (...) {
+        logLine("exception: unknown");
         err = PF_Err_INTERNAL_STRUCT_DAMAGED;
     }
     return err;

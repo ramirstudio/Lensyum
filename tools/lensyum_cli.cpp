@@ -300,6 +300,14 @@ int main(int argc, char** argv) {
         return 1;
     }
     setFrame(rs, src.width, src.height);
+    // ds=0.5 treats the picture as a half-resolution buffer of a layer twice its size, like After
+    // Effects does when the viewer runs at a reduced resolution.
+    const double dsArg = a.num("ds", 1.0);
+    if (dsArg != 1.0 && dsArg > 0.0) {
+        rs.frame.downsampleX = rs.frame.downsampleY = dsArg;
+        rs.frame.layerW = src.width / dsArg; rs.frame.layerH = src.height / dsArg;
+        rs.frame.centerX = 0.5 * rs.frame.layerW; rs.frame.centerY = 0.5 * rs.frame.layerH;
+    }
     if (rs.defocus.mode == DefocusSettings::kRegion) {
         rs.defocus.focusPointX = a.num("px", 0.5) * src.width;
         rs.defocus.focusPointY = a.num("py", 0.5) * src.height;
