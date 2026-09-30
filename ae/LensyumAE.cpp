@@ -634,6 +634,17 @@ PF_Err drawBanner(PF_InData* in_data, PF_EventExtra* ev) {
 }
 
 PF_Err handleEvent(PF_InData* in_data, PF_EventExtra* ev) {
+    {
+        // The first events are written to the log so the panel geometry can be inspected.
+        static int logged = 0;
+        if (ev && ev->contextH && logged < 60 && ev->e_type != PF_Event_IDLE && ev->e_type != PF_Event_ADJUST_CURSOR) {
+            ++logged;
+            logLine("event type " + std::to_string(static_cast<int>(ev->e_type)) + " window " + std::to_string(static_cast<int>((*ev->contextH)->w_type)) +
+                    " index " + std::to_string(static_cast<int>(ev->effect_win.index)) + " area " + std::to_string(static_cast<int>(ev->effect_win.area)) +
+                    " frame " + std::to_string(ev->effect_win.current_frame.left) + "," + std::to_string(ev->effect_win.current_frame.top) + "," +
+                    std::to_string(ev->effect_win.current_frame.right) + "," + std::to_string(ev->effect_win.current_frame.bottom));
+        }
+    }
     if (!ev || !ev->contextH || (*ev->contextH)->w_type != PF_Window_EFFECT) return PF_Err_NONE;
     if (ev->e_type != PF_Event_DRAW || ev->effect_win.index != P_BANNER) return PF_Err_NONE;
     return drawBanner(in_data, ev);
