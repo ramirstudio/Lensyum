@@ -487,7 +487,7 @@ const BannerImage& bannerImage() {
         HMODULE self = nullptr;
         if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                                reinterpret_cast<LPCWSTR>(&pluginFolder), &self)) {
-            if (HRSRC res = FindResourceW(self, L"LENSYUM_BANNER", RT_RCDATA)) {
+            if (HRSRC res = FindResourceW(self, L"LENSYUM_BANNER", MAKEINTRESOURCEW(10)) /* RT_RCDATA */) {
                 const DWORD n = SizeofResource(self, res);
                 HGLOBAL mem = LoadResource(self, res);
                 const unsigned char* p = mem ? static_cast<const unsigned char*>(LockResource(mem)) : nullptr;
