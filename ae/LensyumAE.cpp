@@ -716,12 +716,12 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
 
             renderDefocus(src, dst, rs);
 
-            // Missing model or runtime: show the untouched frame with a red cast so it is obvious.
+            // Missing model or runtime: show the frame flat red so it cannot be mistaken for an effect.
             if (aiFailed)
                 for (int y = 0; y < H; ++y)
                     for (int x = 0; x < W; ++x) {
                         float* p = dst.px(x, y);
-                        p[1] *= 0.55f; p[2] *= 0.55f;
+                        p[0] = p[3] > 0 ? p[3] : 0.0f; p[1] *= 0.05f; p[2] *= 0.05f;
                     }
 
             const A_long ox = prd->outRect.left - prd->inRect.left;
