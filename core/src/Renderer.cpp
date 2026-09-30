@@ -310,7 +310,58 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
     // (measured with the iris at the reference angle) is precomputed.
     const ApertureShape& aper = rs.optics.aperture;
     const bool lobesFace = aper.lobes > 0 && aper.lobesFaceCenter && aper.lobeCount >= 2;
-    const bool irisRound = aper.isRound();
+    const bool rainOn = rs.rain.map && rs.rain.w > 2 && rs.rain.h > 2 && rs.rain.strength > 0;
+    const bool shimmerOn = rs.shimmer.amount > 0;
+    const bool irisRound = aper.isRound() && !rainOn && !shimmerOn;
+
+    // Rain: transmission of the wet glass (drop edges scatter light away, drop bodies focus it)
+    // and the size of the glass patch each disc sees, which is the blur of the drops themselves.
+    std::vector<float> rainT;
+    double rainWindowPx = 0.0;
+    if (rainOn) {
+        const int rw = rs.rain.w, rh = rs.rain.h;
+        rainT.resize(static_cast<size_t>(rw) * rh);
+        const float* m = rs.rain.map;
+        const double gs = 0.004 * std::max(rw, rh);
+        parallelFor(rh, [&](int y) {
+            for (int x = 0; x < rw; ++x) {
+                const float d = m[static_cast<size_t>(y) * rw + x];
+                const float gx = m[static_cast<size_t>(y) * rw + std::min(x + 1, rw - 1)] - m[static_cast<size_t>(y) * rw + std::max(x - 1, 0)];
+                const float gy = m[static_cast<size_t>(std::min(y + 1, rh - 1)) * rw + x] - m[static_cast<size_t>(std::max(y - 1, 0)) * rw + x];
+                const double edge = std::sqrt(gx * gx + gy * gy) * gs;
+                rainT[static_cast<size_t>(y) * rw + x] =
+                    static_cast<float>(clampv(1.0 + rs.rain.strength * (0.35 * d - 1.6 * edge), 0.03, 2.0));
+            }
+        });
+        const DepthToBlur rainBlur(rs.optics, df.focusMm, rs.rain.distanceMm * 0.5, rs.rain.distanceMm * 2.0);
+        rainWindowPx = std::fabs(rainBlur(rs.rain.distanceMm)) * std::max(df.scale, 0.0);
+    }
+    auto rainAt = [&](double lx, double ly) {
+        const double fx = clampv(lx / fm.layerW * rs.rain.w - 0.5, 0.0, rs.rain.w - 1.001);
+        const double fy = clampv(ly / fm.layerH * rs.rain.h - 0.5, 0.0, rs.rain.h - 1.001);
+        const int x0 = static_cast<int>(fx), y0 = static_cast<int>(fy);
+        const float ax = static_cast<float>(fx - x0), ay = static_cast<float>(fy - y0);
+        const float* r0 = &rainT[static_cast<size_t>(y0) * rs.rain.w + x0];
+        const float* r1 = r0 + rs.rain.w;
+        const float a = r0[0] + (r0[1] - r0[0]) * ax, b = r1[0] + (r1[1] - r1[0]) * ax;
+        return a + (b - a) * ay;
+    };
+    // Shimmer: a few bright specks scattered over the pupil, different for every source.
+    auto sparkle = [&](double qx, double qy, uint32_t seed) {
+        const double f = 4.0 * std::max(rs.shimmer.density, 0.1);
+        const double gx = qx * f, gy = qy * f;
+        const int cx = static_cast<int>(std::floor(gx)), cy = static_cast<int>(std::floor(gy));
+        float v = 0;
+        for (int j = -1; j <= 1; ++j)
+            for (int i = -1; i <= 1; ++i) {
+                const uint32_t h = hash2(cx + i, cy + j, seed);
+                if (hashUnit(h) > 0.45f) continue;
+                const double px = cx + i + hashUnit(hash32(h + 1)), py = cy + j + hashUnit(hash32(h + 2));
+                const double d2 = ((gx - px) * (gx - px) + (gy - py) * (gy - py)) / 0.02;
+                v += static_cast<float>(std::exp(-d2)) * (0.5f + hashUnit(hash32(h + 3)));
+            }
+        return v;
+    };
     const size_t mipTotal = A.mips.size();
     std::vector<size_t> bakedOff(mipTotal, 0);
     size_t bakedSize = 0;
@@ -418,12 +469,16 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
 
                 // Pupil position (entry frame) -> iris texture, which is fixed to the lens and seen
                 // upright in background bokeh. The entry frame's x axis is (ey, -ex) in pixels.
+                const uint32_t shimmerSeed = hash2(static_cast<int>(S.x), static_cast<int>(S.y), static_cast<uint32_t>(rs.shimmer.seed) * 2654435761U);
                 auto iris = [&](float pxu, float pyu) {
                     const double qx = pxu * ey + pyu * ex;
                     const double qy = -pxu * ex + pyu * ey;
                     float t = ap.sample(kIrisSign * qx, -kIrisSign * qy);
                     // Lobes that face the centre live in the entry frame, which turns with the field.
                     if (lobesFace && t > 0 && std::sqrt(pxu * pxu + pyu * pyu) > aper.lobeEdge(pxu, pyu)) t = 0;
+                    if (t > 0 && rainOn) t *= rainAt(lx + qx * rainWindowPx, ly - qy * rainWindowPx);
+                    if (t > 0 && shimmerOn)
+                        t *= static_cast<float>(std::max(0.0, 1.0 + rs.shimmer.amount * (4.0 * sparkle(qx, qy, shimmerSeed) - 0.35)));
                     return t;
                 };
                 auto kernel = [&](int i, int j, float* w3) {
@@ -608,6 +663,39 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         }
     });
     if (rs.view != RenderSettings::kResult) return;
+
+    // Drops in focus bend the image through them and darken at their edges; as they go out of
+    // focus this fades and they only show inside the discs.
+    if (rainOn && rs.rain.refractPx > 0) {
+        const float sharp = static_cast<float>(1.0 / (1.0 + (rainWindowPx / 3.0) * (rainWindowPx / 3.0)));
+        if (sharp > 0.02f) {
+            std::vector<float> copy(dst.rgba);
+            const float* m = rs.rain.map;
+            const int rw = rs.rain.w, rh = rs.rain.h;
+            parallelFor(H, [&](int y) {
+                for (int x = 0; x < W; ++x) {
+                    const double lx = (fm.originX + x + 0.5) / dsx, ly = (fm.originY + y + 0.5) / dsy;
+                    const int mx = clampv(static_cast<int>(lx / fm.layerW * rw), 1, rw - 2);
+                    const int my = clampv(static_cast<int>(ly / fm.layerH * rh), 1, rh - 2);
+                    const float gx = m[static_cast<size_t>(my) * rw + mx + 1] - m[static_cast<size_t>(my) * rw + mx - 1];
+                    const float gy = m[static_cast<size_t>(my + 1) * rw + mx] - m[static_cast<size_t>(my - 1) * rw + mx];
+                    const double k = rs.rain.refractPx * rs.rain.strength * sharp * 0.5 * std::max(rw, rh) / 256.0;
+                    const double sx = clampv(x + gx * k * dsx, 0.0, W - 1.001), sy = clampv(y + gy * k * dsy, 0.0, H - 1.001);
+                    const int x0 = static_cast<int>(sx), y0 = static_cast<int>(sy);
+                    const float fx = static_cast<float>(sx - x0), fy = static_cast<float>(sy - y0);
+                    const float edge = std::min(1.0f, std::sqrt(gx * gx + gy * gy) * 4.0f);
+                    const float dark = 1.0f - 0.45f * edge * sharp * static_cast<float>(rs.rain.strength);
+                    float* d = dst.px(x, y);
+                    for (int c = 0; c < 4; ++c) {
+                        auto at = [&](int xx, int yy) { return copy[(static_cast<size_t>(yy) * W + xx) * 4 + c]; };
+                        const float a0 = at(x0, y0) + (at(std::min(x0 + 1, W - 1), y0) - at(x0, y0)) * fx;
+                        const float a1 = at(x0, std::min(y0 + 1, H - 1)) + (at(std::min(x0 + 1, W - 1), std::min(y0 + 1, H - 1)) - at(x0, std::min(y0 + 1, H - 1))) * fx;
+                        d[c] = (a0 + (a1 - a0) * fy) * (c < 3 ? dark : 1.0f);
+                    }
+                }
+            });
+        }
+    }
 
     // Lateral chromatic aberration: red magnified and blue shrunk about the optical centre,
     // growing towards the corners; it shows on sharp and blurred areas alike.

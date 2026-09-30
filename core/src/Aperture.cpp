@@ -36,6 +36,45 @@ float specks(double x, double y, double freq, uint32_t seed) {
     return v;
 }
 
+bool insidePolygon(const double* vx, const double* vy, int n, double x, double y) {
+    bool in = false;
+    for (int i = 0, j = n - 1; i < n; j = i++)
+        if (((vy[i] > y) != (vy[j] > y)) && (x < (vx[j] - vx[i]) * (y - vy[i]) / (vy[j] - vy[i]) + vx[i])) in = !in;
+    return in;
+}
+
+// Built-in shapes in stop coordinates (+y up), all inside the unit disc.
+bool insideShape(int shape, double x, double y) {
+    switch (shape) {
+    case ApertureShape::kHeart: {
+        const double u = x * 1.18, v = y * 1.18 + 0.12;
+        const double a = u * u + v * v - 0.62;
+        return a * a * a - u * u * v * v * v * 0.9 <= 0.0;
+    }
+    case ApertureShape::kStar: {
+        double vx[10], vy[10];
+        for (int i = 0; i < 10; ++i) {
+            const double r = (i % 2 == 0) ? 0.98 : 0.42, a = kPi / 2 + i * kPi / 5;
+            vx[i] = r * std::cos(a); vy[i] = r * std::sin(a);
+        }
+        return insidePolygon(vx, vy, 10, x, y);
+    }
+    case ApertureShape::kTriangle: {
+        double vx[3], vy[3];
+        for (int i = 0; i < 3; ++i) { const double a = kPi / 2 + i * 2 * kPi / 3; vx[i] = 0.98 * std::cos(a); vy[i] = 0.98 * std::sin(a); }
+        return insidePolygon(vx, vy, 3, x, y);
+    }
+    case ApertureShape::kDiamond: return std::fabs(x) / 0.62 + std::fabs(y) / 0.98 <= 1.0;
+    case ApertureShape::kCross: return (std::fabs(x) < 0.28 || std::fabs(y) < 0.28) && x * x + y * y < 0.96;
+    case ApertureShape::kRing: { const double r2 = x * x + y * y; return r2 < 0.96 && r2 > 0.42; }
+    case ApertureShape::kCrescent: {
+        const double dx = x - 0.38, dy = y - 0.22;
+        return x * x + y * y < 0.96 && dx * dx + dy * dy > 0.62;
+    }
+    default: return true;
+    }
+}
+
 } // namespace
 
 double ApertureShape::lobeEdge(double x, double y) const {
@@ -58,6 +97,7 @@ float ApertureShape::transmission(double x, double y) const {
         const double edge = lerp(polyR, 1.0, clampv(curvature, 0.0, 1.0));
         if (rho > edge) return 0.0f;
     }
+    if (shape != kIris && !insideShape(shape, x, y)) return 0.0f;
     if (lobes > 0 && lobeCount >= 2 && !lobesFaceCenter) {
         if (rho > lobeEdge(x, y)) return 0.0f;
     }
@@ -93,7 +133,7 @@ float ApertureShape::transmission(double x, double y) const {
 }
 
 void ApertureShape::hashInto(Hasher& h) const {
-    h.add(blades); h.add(curvature); h.add(rotationRad); h.add(obstruction);
+    h.add(shape); h.add(blades); h.add(curvature); h.add(rotationRad); h.add(obstruction);
     h.add(lobes); h.add(lobeCount); h.add(lobePower); h.add(lobeAngle); h.add(lobesFaceCenter); h.add(onion); h.add(onionFreq); h.add(texture); h.add(textureScale); h.add(textureSeed);
     h.add(maskW); h.add(maskH);
     if (!mask.empty()) h.bytes(mask.data(), mask.size() * sizeof(float));

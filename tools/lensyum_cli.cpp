@@ -93,6 +93,22 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     rs.filmbackOffsetMm = a.num("film", 0.0);
     rs.blendBack = a.num("blend", 1.0);
     rs.lateralCaPx = a.num("lca", 0.0);
+    o.aperture.shape = static_cast<int>(a.num("shape", 0));
+    rs.shimmer.amount = a.num("shimmer", 0.0);
+    rs.shimmer.density = a.num("shimdens", 1.0);
+    rs.rain.strength = a.num("rain", 0.0);
+    rs.rain.distanceMm = a.num("raindist", 0.3) * 1000.0;
+    rs.rain.refractPx = a.num("refract", 8.0);
+    static std::vector<float> rainMap;
+    if (a.kv.count("rainmap")) {
+        int w, h, c;
+        std::vector<float> d;
+        if (readPnm(a.str("rainmap", "").c_str(), w, h, c, d)) {
+            rainMap.resize(static_cast<size_t>(w) * h);
+            for (int i = 0; i < w * h; ++i) rainMap[i] = d[static_cast<size_t>(i) * c];
+            rs.rain.map = rainMap.data(); rs.rain.w = w; rs.rain.h = h;
+        }
+    }
     if (a.kv.count("region")) {
         rs.defocus.mode = DefocusSettings::kRegion;
         rs.defocus.regionRadiusPx = a.num("region", 200);

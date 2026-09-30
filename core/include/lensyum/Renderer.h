@@ -51,6 +51,24 @@ struct FrameMapping {
     double centerX = 960, centerY = 540;     // optical centre, full-resolution layer pixels
 };
 
+// Drops on the front glass: a height map (0..1) at its own distance. Behind the drops every
+// bokeh disc shows the patch of glass its light crossed; when the drops are in focus they bend
+// the image directly.
+struct RainSettings {
+    const float* map = nullptr;
+    int w = 0, h = 0;
+    double distanceMm = 300.0;
+    double strength = 0.0;  // 0..1
+    double refractPx = 8.0; // displacement of the image through a drop when it is sharp
+};
+
+// Sparkle inside the discs: each highlight twinkles on its own.
+struct ShimmerSettings {
+    double amount = 0.0;  // 0..1
+    double density = 1.0;
+    int seed = 0;
+};
+
 struct RenderSettings {
     OpticsSettings optics;
     DefocusSettings defocus;
@@ -61,6 +79,8 @@ struct RenderSettings {
     double filmbackOffsetMm = 0.0; // sensor moved along the axis: shifts focus everywhere
     double blendBack = 1.0;        // 1 = full effect, 0 = original
     double lateralCaPx = 0.0;      // lateral chromatic aberration: red/blue shift at the corner, px
+    RainSettings rain;
+    ShimmerSettings shimmer;
     int layers = 12;      // depth slices for occlusion
     enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2 };
     int view = kResult;

@@ -10,6 +10,9 @@ namespace lensyum {
 // Transmission of the aperture stop, evaluated in stop coordinates normalised to the
 // current stop radius (the unit disc is the open iris at the chosen f-stop).
 struct ApertureShape {
+    // Built-in aperture shapes (0 = iris made of blades).
+    enum Shape { kIris = 0, kHeart, kStar, kTriangle, kDiamond, kCross, kRing, kCrescent, kShapeCount };
+    int shape = kIris;
     int blades = 0;              // 0 = perfectly round iris
     double curvature = 0.0;      // 0 = straight blades, 1 = round
     double rotationRad = 0.0;
@@ -32,7 +35,7 @@ struct ApertureShape {
     float transmission(double x, double y) const;
     double lobeEdge(double x, double y) const; // edge radius of the lobed disc in direction (x, y)
     // True when the iris looks the same at every rotation (round, no custom mask, no texture).
-    bool isRound() const { return (blades < 3 || curvature >= 0.999) && mask.empty() && texture <= 0.0 && lobes <= 0.0; }
+    bool isRound() const { return shape == kIris && (blades < 3 || curvature >= 0.999) && mask.empty() && texture <= 0.0 && lobes <= 0.0; }
     void hashInto(Hasher& h) const;
 };
 

@@ -55,7 +55,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Format", kFormatCount, 1, kFormatNames, ID_FORMAT);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Custom Sensor Width (mm)", 2, 100, 5, 70, 36, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_SENSOR_WIDTH);
+    PF_ADD_FLOAT_SLIDERX("Sensor Width (Format: Custom)", 2, 100, 5, 70, 36, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_SENSOR_WIDTH);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("F-Stop", 0.7, 64, 0.7, 22, 2.8, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_FSTOP);
     AEFX_CLR_STRUCT(def);
@@ -68,9 +68,27 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Focus", ID_FOCUS_TOPIC);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POPUP("Defocus Source", 3, 1, "Uniform|Depth Map|Focus Region", ID_DEFOCUS_MODE);
+    PF_ADD_POPUP("Defocus Source", 3, 1, "Whole Frame|Depth Map|Focus Region", ID_DEFOCUS_MODE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Defocus Amount (px)", -500, 500, -150, 150, 30, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_DEFOCUS_AMOUNT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POINT("Focus Point", 50, 50, FALSE, ID_FOCUS_POINT);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Focus Distance (m)", 0.05, 100000, 0.2, 30, 3, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_FOCUS_DISTANCE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Defocus Scale", 0, 1000, 0, 300, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_DEFOCUS_SCALE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC("Focus Region", ID_REGION_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Region Radius (px)", 0, 10000, 0, 1500, 300, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_RADIUS);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Region Falloff (px)", 1, 10000, 1, 2000, 400, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_FALLOFF);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Region Aspect", 0.1, 10, 0.25, 4, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_REGION_ASPECT);
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(ID_REGION_TOPIC_END);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC("Depth Map", ID_DEPTH_TOPIC);
     AEFX_CLR_STRUCT(def);
     PF_ADD_LAYER("Depth Layer", PF_LayerDefault_NONE, ID_DEPTH_LAYER);
     AEFX_CLR_STRUCT(def);
@@ -82,24 +100,16 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Far Distance (m)", 0.1, 100000, 1, 200, 50, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_DEPTH_FAR);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Focus Distance (m)", 0.05, 100000, 0.2, 30, 3, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_FOCUS_DISTANCE);
-    AEFX_CLR_STRUCT(def);
     PF_ADD_CHECKBOXX("Focus On Point", FALSE, 0, ID_FOCUS_PICK);
     AEFX_CLR_STRUCT(def);
-    PF_ADD_POINT("Focus Point", 50, 50, FALSE, ID_FOCUS_POINT);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Region Radius (px)", 0, 10000, 0, 1500, 300, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_RADIUS);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Region Falloff (px)", 1, 10000, 1, 2000, 400, PF_Precision_INTEGER, PF_ValueDisplayFlag_NONE, 0, ID_REGION_FALLOFF);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Region Aspect", 0.1, 10, 0.25, 4, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_REGION_ASPECT);
-    AEFX_CLR_STRUCT(def);
-    PF_ADD_FLOAT_SLIDERX("Defocus Scale", 0, 1000, 0, 300, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_DEFOCUS_SCALE);
+    PF_END_TOPIC(ID_DEPTH_TOPIC_END);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_FOCUS_TOPIC_END);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Aperture", ID_APERTURE_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_POPUP("Shape", 8, 1, "Iris (Blades)|Heart|Star|Triangle|Diamond|Cross|Ring|Crescent", ID_APERTURE_SHAPE);
     AEFX_CLR_STRUCT(def);
     PF_ADD_SLIDER("Blades", 0, 24, 0, 16, 0, ID_BLADES);
     AEFX_CLR_STRUCT(def);
@@ -157,6 +167,25 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ADD_SLIDER("Texture Seed", 0, 10000, 0, 100, 0, ID_TEXTURE_SEED);
     AEFX_CLR_STRUCT(def);
     PF_END_TOPIC(ID_CREATIVE_TOPIC_END);
+
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC("Layers", ID_LAYERS_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_LAYER("Rain Layer", PF_LayerDefault_NONE, ID_RAIN_LAYER);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Rain Distance (m)", 0.01, 1000, 0.05, 10, 0.3, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_RAIN_DISTANCE);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Rain Strength", 0, 100, 0, 100, 100, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_RAIN_STRENGTH);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Rain Refraction (px)", 0, 100, 0, 40, 8, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_RAIN_REFRACTION);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Shimmer", 0, 100, 0, 100, 0, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_SHIMMER);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Shimmer Density", 0.2, 5, 0.2, 5, 1, PF_Precision_HUNDREDTHS, PF_ValueDisplayFlag_NONE, 0, ID_SHIMMER_DENSITY);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_SLIDER("Shimmer Seed", 0, 10000, 0, 100, 0, ID_SHIMMER_SEED);
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(ID_LAYERS_TOPIC_END);
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Highlights", ID_HIGHLIGHT_TOPIC);
@@ -391,6 +420,9 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
                                   in_data->current_time, in_data->time_step, in_data->time_scale, &depthRes));
     ERR(extra->cb->checkout_layer(in_data->effect_ref, P_CUSTOM_APERTURE, CHECKOUT_APERTURE, &fullReq,
                                   in_data->current_time, in_data->time_step, in_data->time_scale, &apRes));
+    PF_CheckoutResult rainRes;
+    ERR(extra->cb->checkout_layer(in_data->effect_ref, P_RAIN_LAYER, CHECKOUT_RAIN, &fullReq,
+                                  in_data->current_time, in_data->time_step, in_data->time_scale, &rainRes));
     if (err) return err;
 
     // Output: what was asked for, within what the input can provide (the layer does not grow).
@@ -424,21 +456,23 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
     const PreRenderData* prd = static_cast<const PreRenderData*>(extra->input->pre_render_data);
     if (!prd) return PF_Err_BAD_CALLBACK_PARAM;
 
-    PF_EffectWorld *inW = nullptr, *outW = nullptr, *depthW = nullptr, *apW = nullptr;
+    PF_EffectWorld *inW = nullptr, *outW = nullptr, *depthW = nullptr, *apW = nullptr, *rainW = nullptr;
     ERR(extra->cb->checkout_layer_pixels(in_data->effect_ref, CHECKOUT_INPUT, &inW));
     ERR(extra->cb->checkout_output(in_data->effect_ref, &outW));
     if (!err) {
         extra->cb->checkout_layer_pixels(in_data->effect_ref, CHECKOUT_DEPTH, &depthW);
         extra->cb->checkout_layer_pixels(in_data->effect_ref, CHECKOUT_APERTURE, &apW);
+        extra->cb->checkout_layer_pixels(in_data->effect_ref, CHECKOUT_RAIN, &rainW);
     }
 
     if (!err && inW && outW) {
-        WorldView in, out, depth, ap;
-        in.w = inW; out.w = outW; depth.w = depthW; ap.w = apW;
+        WorldView in, out, depth, ap, rain;
+        in.w = inW; out.w = outW; depth.w = depthW; ap.w = apW; rain.w = rainW;
         ERR(pixelFormat(in_data, inW, in.fmt));
         ERR(pixelFormat(in_data, outW, out.fmt));
         if (depthW) ERR(pixelFormat(in_data, depthW, depth.fmt));
         if (apW) ERR(pixelFormat(in_data, apW, ap.fmt));
+        if (rainW) ERR(pixelFormat(in_data, rainW, rain.fmt));
 
         ParamReader pr(in_data);
         RenderSettings rs;
@@ -472,6 +506,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         o.lens.focusDistanceMm = d.focusMm;
 
         ApertureShape& a = o.aperture;
+        a.shape = static_cast<int>(pr.num(P_APERTURE_SHAPE)) - 1;
         a.blades = static_cast<int>(pr.num(P_BLADES));
         if (a.blades > 0 && a.blades < 3) a.blades = 3;
         a.curvature = pr.num(P_BLADE_CURVATURE) / 100.0;
@@ -501,6 +536,14 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         a.texture = pr.num(P_TEXTURE) / 100.0;
         a.textureScale = pr.num(P_TEXTURE_SCALE) / 100.0;
         a.textureSeed = static_cast<int>(pr.num(P_TEXTURE_SEED));
+        rs.rain.distanceMm = pr.num(P_RAIN_DISTANCE) * 1000.0;
+        rs.rain.strength = pr.num(P_RAIN_STRENGTH) / 100.0;
+        rs.rain.refractPx = pr.num(P_RAIN_REFRACTION);
+        rs.shimmer.amount = pr.num(P_SHIMMER) / 100.0;
+        rs.shimmer.density = pr.num(P_SHIMMER_DENSITY);
+        // The seed moves with time so every highlight twinkles from frame to frame.
+        const A_long frame = in_data->time_step > 0 ? in_data->current_time / in_data->time_step : 0;
+        rs.shimmer.seed = static_cast<int>(pr.num(P_SHIMMER_SEED)) * 7919 + static_cast<int>(frame);
 
         rs.highlights.threshold = pr.num(P_HI_THRESHOLD) / 100.0;
         rs.highlights.gain = pr.num(P_HI_GAIN);
@@ -535,6 +578,14 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
             d.depth = depthBuf.data();
             d.depthW = dw;
             d.depthH = dh;
+        }
+        std::vector<float> rainBuf;
+        if (!err && rainW) {
+            int rw, rh;
+            worldLuminance(rain, 2048, true, rainBuf, rw, rh);
+            rs.rain.map = rainBuf.data();
+            rs.rain.w = rw;
+            rs.rain.h = rh;
         }
         if (!err && apW) {
             worldLuminance(ap, 128, true, maskBuf, a.maskW, a.maskH);
@@ -582,6 +633,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
     ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_INPUT));
     if (depthW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_DEPTH));
     if (apW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_APERTURE));
+    if (rainW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_RAIN));
     return err ? err : err2;
 }
 
