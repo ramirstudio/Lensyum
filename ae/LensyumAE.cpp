@@ -9,6 +9,8 @@
 #include "AE_EffectCBSuites.h"
 #include "AE_Macros.h"
 #include "AE_EffectUI.h"
+#include "AE_EffectSuitesOld.h"
+#include "adobesdk/DrawbotSuite.h"
 #include "Param_Utils.h"
 #include "SPBasic.h"
 
@@ -67,7 +69,7 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     def.ui_flags = PF_PUI_CONTROL;
     def.ui_width = kBannerUiWidth;
     def.ui_height = kBannerUiHeight;
-    PF_STRCPY(def.name, " ");
+    PF_STRCPY(def.PF_DEF_NAME, " ");
     def.uu.id = ID_BANNER;
     if (const PF_Err e = (*in_data->inter.add_param)(in_data->effect_ref, -1, &def)) return e;
 
