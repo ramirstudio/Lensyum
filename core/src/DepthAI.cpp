@@ -148,7 +148,7 @@ bool depthAIInit(const DepthAIConfig& cfg, std::string& err) {
         // Altered search path: DirectML.dll and other dependencies are looked up next to the
         // runtime, not in the host application's folder.
         HMODULE lib = LoadLibraryExW(widen(cfg.runtimeLib).c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (!lib) { err = "cannot load " + cfg.runtimeLib; return false; }
+        if (!lib) { err = "cannot load " + cfg.runtimeLib + " (Windows error " + std::to_string(GetLastError()) + ", 126 = a dependency such as DirectML.dll is missing, 193 = wrong architecture, 2 = file not found)"; return false; }
         getBase = reinterpret_cast<GetApiBaseFn>(GetProcAddress(lib, "OrtGetApiBase"));
 #else
         void* lib = dlopen(cfg.runtimeLib.c_str(), RTLD_NOW | RTLD_LOCAL);

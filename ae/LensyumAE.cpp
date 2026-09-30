@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <new>
 #include <string>
@@ -686,6 +687,20 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
                     aiFailed = !depthAIEstimate(rgb.data(), cw, ch, sides[std::min(std::max(aiDetail, 1), 4) - 1], aiRefine, aiDepthBuf, aiErr);
                 } else {
                     aiFailed = true;
+                }
+                if (aiFailed) {
+#ifdef AE_OS_WIN
+                    // The reason goes to %TEMP%\lensyum_log.txt so a failure is diagnosable.
+                    char tmp[MAX_PATH + 1] = {0};
+                    if (GetTempPathA(MAX_PATH, tmp) > 0) {
+                        FILE* f = std::fopen((std::string(tmp) + "lensyum_log.txt").c_str(), "w");
+                        if (f) {
+                            std::fprintf(f, "AI depth failed: %s\nruntime: %s\nmodel: %s\n", aiErr.empty() ? "layer too small" : aiErr.c_str(),
+                                         cfg.runtimeLib.c_str(), cfg.modelPath.c_str());
+                            std::fclose(f);
+                        }
+                    }
+#endif
                 }
                 if (!aiFailed) {
                     d.depth = aiDepthBuf.data();
