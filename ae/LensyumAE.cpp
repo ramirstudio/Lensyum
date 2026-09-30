@@ -79,6 +79,20 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     AEFX_CLR_STRUCT(def);
     PF_ADD_POPUP("Defocus Source", 4, 1, "Whole Frame|Depth Map|Focus Region|AI Depth (auto)", ID_DEFOCUS_MODE);
     AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Show Depth Map", FALSE, 0, ID_SHOW_DEPTH);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_CHECKBOXX("Show 3D Focus View", FALSE, 0, ID_SHOW_3D);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_TOPIC("3D Focus View", ID_3D_TOPIC);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Orbit", -85, 85, -85, 85, 30, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_3D_YAW);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Tilt", -85, 85, -85, 85, 20, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_3D_PITCH);
+    AEFX_CLR_STRUCT(def);
+    PF_ADD_FLOAT_SLIDERX("Relief", 0, 300, 0, 200, 60, PF_Precision_TENTHS, PF_ValueDisplayFlag_PERCENT, 0, ID_3D_RELIEF);
+    AEFX_CLR_STRUCT(def);
+    PF_END_TOPIC(ID_3D_TOPIC_END);
+    AEFX_CLR_STRUCT(def);
     PF_ADD_FLOAT_SLIDERX("Defocus Amount (px)", -500, 500, -150, 150, 30, PF_Precision_TENTHS, PF_ValueDisplayFlag_NONE, 0, ID_DEFOCUS_AMOUNT);
     AEFX_CLR_STRUCT(def);
     PF_ADD_POINT("Focus Point", 50, 50, FALSE, ID_FOCUS_POINT);
@@ -634,6 +648,11 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         double ocx, ocy;
         pr.point(P_OPTICAL_CENTER, ocx, ocy);
         rs.view = static_cast<int>(pr.num(P_VIEW)) - 1;
+        rs.view3dYawDeg = pr.num(P_3D_YAW);
+        rs.view3dPitchDeg = pr.num(P_3D_PITCH);
+        rs.view3dRelief = pr.num(P_3D_RELIEF) / 100.0;
+        if (pr.num(P_SHOW_3D) != 0) rs.view = RenderSettings::kDepth3D;
+        else if (pr.num(P_SHOW_DEPTH) != 0) rs.view = RenderSettings::kDepthView;
         ERR(pr.err());
 
         o.pixelAspect = prd->par;

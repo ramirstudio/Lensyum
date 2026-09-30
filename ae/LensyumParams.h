@@ -17,6 +17,13 @@ enum {
 
     P_FOCUS_TOPIC,
     P_DEFOCUS_MODE,
+    P_SHOW_DEPTH,
+    P_SHOW_3D,
+    P_3D_TOPIC,
+    P_3D_YAW,
+    P_3D_PITCH,
+    P_3D_RELIEF,
+    P_3D_TOPIC_END,
     P_DEFOCUS_AMOUNT,
     P_FOCUS_POINT,
     P_FOCUS_DISTANCE,
@@ -210,7 +217,14 @@ enum {
     ID_AI_CONTRAST,
     ID_AI_SHIFT,
     ID_AI_SMOOTH,
-    ID_AI_INVERT
+    ID_AI_INVERT,
+    ID_SHOW_DEPTH,
+    ID_SHOW_3D,
+    ID_3D_TOPIC,
+    ID_3D_YAW,
+    ID_3D_PITCH,
+    ID_3D_RELIEF,
+    ID_3D_TOPIC_END
 };
 
 // Checkout IDs used between PreRender and SmartRender.

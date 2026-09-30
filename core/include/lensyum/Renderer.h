@@ -83,8 +83,10 @@ struct RenderSettings {
     RainSettings rain;
     ShimmerSettings shimmer;
     int layers = 12;      // depth slices for occlusion
-    enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2, kDepthView = 3, kFocusOverlay = 4 };
+    enum View { kResult = 0, kBlurMap = 1, kBokehGrid = 2, kDepthView = 3, kFocusOverlay = 4, kDepth3D = 5 };
     int view = kResult;
+    // kDepth3D: orbit angles in degrees and depth relief as a fraction of the frame width.
+    double view3dYawDeg = 30.0, view3dPitchDeg = 20.0, view3dRelief = 0.6;
 };
 
 void renderDefocus(const Image& src, Image& dst, const RenderSettings& rs);

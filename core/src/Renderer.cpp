@@ -266,6 +266,103 @@ void renderDefocus(const Image& srcIn, Image& dst, const RenderSettings& rsIn) {
         return;
     }
 
+    if (rs.view == RenderSettings::kDepth3D) {
+        // The depth map as a relief seen from an orbiting camera, coloured with the frame. Points
+        // that stay sharp are tinted green, the focus point is a disc on a yellow depth axis and
+        // the plane of focus is the green outline.
+        const double LW = fm.layerW, LH = fm.layerH;
+        std::vector<float> zbuf(static_cast<size_t>(W) * H, -1e30f);
+        for (int i = 0; i < W * H; ++i) {
+            float* o = dst.rgba.data() + static_cast<size_t>(i) * 4;
+            o[0] = o[1] = 0.02f; o[2] = 0.025f; o[3] = 1.0f;
+        }
+        auto nearAt = [&](double u, double v) {
+            if (!useDepth) return 0.5;
+            const double raw = sampleDepth(df, u, v);
+            return clampv(df.whiteIsNear ? raw : 1.0 - raw, 0.0, 1.0);
+        };
+        double fz = 0.5;
+        if (useDepth) {
+            if (df.focusFromPoint) fz = nearAt(df.focusPointX / LW, df.focusPointY / LH);
+            else {
+                double lo = 0.0, hi = 1.0; // distance falls as the value gets nearer
+                for (int it = 0; it < 30; ++it) {
+                    const double mid = 0.5 * (lo + hi);
+                    const double raw = df.whiteIsNear ? mid : 1.0 - mid;
+                    if (depthToDistance(df, raw) > df.focusMm) lo = mid; else hi = mid;
+                }
+                fz = 0.5 * (lo + hi);
+            }
+        }
+        const double rad = kPi / 180.0;
+        const double cyw = std::cos(rs.view3dYawDeg * rad), syw = std::sin(rs.view3dYawDeg * rad);
+        const double cpt = std::cos(rs.view3dPitchDeg * rad), spt = std::sin(rs.view3dPitchDeg * rad);
+        const double Dcam = 1.8 * LW, zoom = 0.8, relief = std::max(rs.view3dRelief, 0.0);
+        auto project = [&](double lx, double ly, double n, double& ox, double& oy, double& oz, double& sc) {
+            const double X = lx - 0.5 * LW, Y = ly - 0.5 * LH, Z = (n - 0.5) * relief * LW;
+            const double xc = X * cyw + Z * syw, zc = -X * syw + Z * cyw;
+            const double yc = Y * cpt - zc * spt, zc2 = Y * spt + zc * cpt;
+            const double den = Dcam - zc2;
+            if (den < 0.2 * Dcam) return false;
+            sc = Dcam / den * zoom;
+            ox = (0.5 * LW + xc * sc) * dsx - fm.originX;
+            oy = (0.5 * LH + yc * sc) * dsy - fm.originY;
+            oz = zc2;
+            return true;
+        };
+        const double step = std::max(LW / 420.0, 1.0);
+        for (double ly = 0.5 * step; ly < LH; ly += step)
+            for (double lx = 0.5 * step; lx < LW; lx += step) {
+                const double n = nearAt(lx / LW, ly / LH);
+                const int bx = clampv(static_cast<int>(lx * dsx - fm.originX), 0, W - 1);
+                const int by = clampv(static_cast<int>(ly * dsy - fm.originY), 0, H - 1);
+                const Source& S = srcs[static_cast<size_t>(by) * W + bx];
+                const float a = std::max(S.c[3], 1e-5f);
+                float c[3] = {S.c[0] / a, S.c[1] / a, S.c[2] / a};
+                const float l = std::min(luma(S.c) / a, 1.0f);
+                if (std::fabs(S.s) < 0.5f) {
+                    c[0] = 0.25f * c[0] + 0.05f; c[1] = 0.45f * c[1] + 0.45f * (0.3f + l); c[2] = 0.25f * c[2] + 0.12f;
+                } else { c[0] *= 0.85f; c[1] *= 0.85f; c[2] *= 0.85f; }
+                double ox, oy, oz, sc;
+                if (!project(lx, ly, n, ox, oy, oz, sc)) continue;
+                const double hs = std::max(0.9, 1.15 * step * dsx * sc);
+                const int x0 = std::max(0, static_cast<int>(std::floor(ox - hs))), x1 = std::min(W - 1, static_cast<int>(std::ceil(ox + hs)));
+                const int y0 = std::max(0, static_cast<int>(std::floor(oy - hs))), y1 = std::min(H - 1, static_cast<int>(std::ceil(oy + hs)));
+                for (int yy = y0; yy <= y1; ++yy)
+                    for (int xx = x0; xx <= x1; ++xx) {
+                        float& zb = zbuf[static_cast<size_t>(yy) * W + xx];
+                        if (oz <= zb) continue;
+                        zb = static_cast<float>(oz);
+                        float* o = dst.px(xx, yy);
+                        o[0] = c[0]; o[1] = c[1]; o[2] = c[2]; o[3] = 1.0f;
+                    }
+            }
+        const double thick = std::max(1.0, 1.2 * std::max(dsx, dsy));
+        auto disc = [&](double cx, double cy, double r, const float* col) {
+            for (int yy = std::max(0, static_cast<int>(cy - r)); yy <= std::min(H - 1, static_cast<int>(cy + r)); ++yy)
+                for (int xx = std::max(0, static_cast<int>(cx - r)); xx <= std::min(W - 1, static_cast<int>(cx + r)); ++xx)
+                    if ((xx - cx) * (xx - cx) + (yy - cy) * (yy - cy) <= r * r) {
+                        float* o = dst.px(xx, yy);
+                        o[0] = col[0]; o[1] = col[1]; o[2] = col[2]; o[3] = 1.0f;
+                    }
+        };
+        auto line = [&](double ax, double ay, double az, double bx, double by, double bz, const float* col) {
+            double a1, a2, a3, a4, b1, b2, b3, b4;
+            if (!project(ax, ay, az, a1, a2, a3, a4) || !project(bx, by, bz, b1, b2, b3, b4)) return;
+            const int n = std::max(2, static_cast<int>(std::hypot(b1 - a1, b2 - a2)));
+            for (int i = 0; i <= n; ++i) disc(a1 + (b1 - a1) * i / n, a2 + (b2 - a2) * i / n, thick, col);
+        };
+        const float green[3] = {0.1f, 0.9f, 0.3f}, yellow[3] = {0.95f, 0.8f, 0.1f}, white[3] = {1.0f, 1.0f, 1.0f};
+        line(0, 0, fz, LW, 0, fz, green); line(LW, 0, fz, LW, LH, fz, green);
+        line(LW, LH, fz, 0, LH, fz, green); line(0, LH, fz, 0, 0, fz, green);
+        line(0, 0.5 * LH, fz, LW, 0.5 * LH, fz, green); line(0.5 * LW, 0, fz, 0.5 * LW, LH, fz, green);
+        const double fxp = clampv(df.focusPointX, 0.0, LW), fyp = clampv(df.focusPointY, 0.0, LH);
+        line(fxp, fyp, 0.0, fxp, fyp, 1.0, yellow);
+        double mx, my, mz, ms;
+        if (project(fxp, fyp, fz, mx, my, mz, ms)) { disc(mx, my, 6.0 * std::max(dsx, dsy), white); disc(mx, my, 4.0 * std::max(dsx, dsy), yellow); }
+        return;
+    }
+
     lzMark("sources");
     // ---- Depth slices -------------------------------------------------------------------
     const float dsMax = static_cast<float>(std::max(dsx, dsy));

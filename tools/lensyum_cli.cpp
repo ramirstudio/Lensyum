@@ -129,6 +129,7 @@ void applyArgs(const Args& a, RenderSettings& rs) {
     rs.defocus.scale = a.num("scale", 1.0);
     rs.layers = static_cast<int>(a.num("layers", 12));
     rs.view = static_cast<int>(a.num("view", 0));
+    rs.view3dYawDeg = a.num("yaw", 30); rs.view3dPitchDeg = a.num("pitch", 20); rs.view3dRelief = a.num("relief", 0.6);
     if (a.kv.count("mask")) {
         int w, h, c;
         std::vector<float> d;
