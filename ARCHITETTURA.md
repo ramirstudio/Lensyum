@@ -24,7 +24,7 @@ Il raggio massimo delle sfocature è noto in anticipo, quindi `renderDefocus` es
 
 ## Wrapper After Effects
 
-`LensyumAE.cpp` implementa SmartFX (`PreRender`, `SmartRender`) a 8, 16 e 32 bit, con flag per il multi-frame rendering. I parametri hanno indici nell'ordine del pannello (`LensyumParams.h`) e ID su disco stabili, sempre aggiunti in coda. I valori point arrivano alla risoluzione di downsample corrente e vengono riportati a pixel del livello. Il padding richiesto segue la sfocatura effettiva. Il PiPL è pre-generato in `LensyumPiPL.rc` (PiPLtool in build produceva risorse vuote) e va tenuto coerente con i flag di `GlobalSetup`.
+`LensyumAE.cpp` implementa SmartFX (`PreRender`, `SmartRender`) a 8, 16 e 32 bit, con flag per il multi-frame rendering. I parametri hanno indici nell'ordine del pannello (`LensyumParams.h`) e ID su disco stabili, sempre aggiunti in coda. I valori point arrivano alla risoluzione di downsample corrente e vengono riportati a pixel del livello. Il padding richiesto segue la sfocatura effettiva. In cima al pannello c'è un parametro senza dati (`P_BANNER`, flag `PF_PUI_CONTROL`) disegnato con Drawbot dal gestore `PF_Cmd_EVENT`: l'immagine è un blocco BGRA grezzo incorporato come risorsa (`LensyumBanner.bin`) e si adatta alla larghezza della riga; per questo il PiPL dichiara anche `PF_OutFlag_CUSTOM_UI`. Il PiPL è pre-generato in `LensyumPiPL.rc` (PiPLtool in build produceva risorse vuote) e va tenuto coerente con i flag di `GlobalSetup`.
 
 In modalità AI Depth la stima gira sull'area del livello prima del render. Se runtime o modello mancano o falliscono, il fotogramma esce rosso pieno e il motivo è scritto in `%TEMP%\lensyum_log.txt`. Il plugin cerca `lensyum_ort.dll` e `lensyum_depth.onnx` accanto al `.aex`.
 

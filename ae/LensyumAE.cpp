@@ -8,6 +8,7 @@
 #include "AE_EffectCB.h"
 #include "AE_EffectCBSuites.h"
 #include "AE_Macros.h"
+#include "AE_EffectUI.h"
 #include "Param_Utils.h"
 #include "SPBasic.h"
 
@@ -41,6 +42,8 @@ namespace {
 const char* kFormatNames = "Full Frame (36 mm)|Super 35 (24.89 mm)|APS-C (23.6 mm)|Micro Four Thirds (17.3 mm)|Super 16 (12.52 mm)|Large Format 65 (54.12 mm)|Custom";
 const double kFormatWidths[] = {36.0, 24.89, 23.6, 17.3, 12.52, 54.12};
 constexpr int kFormatCount = 7;
+constexpr int kBannerUiWidth = 200;  // hint only: the banner is drawn across the whole row
+constexpr int kBannerUiHeight = 150;
 
 const std::string& lensPopupString() {
     static const std::string s = [] {
@@ -56,6 +59,17 @@ const std::string& lensPopupString() {
 
 PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_ParamDef def;
+
+    // Banner: a parameter without data whose only job is to be drawn (see DrawBanner).
+    AEFX_CLR_STRUCT(def);
+    def.param_type = PF_Param_NO_DATA;
+    def.flags = PF_ParamFlag_CANNOT_TIME_VARY;
+    def.ui_flags = PF_PUI_CONTROL;
+    def.ui_width = kBannerUiWidth;
+    def.ui_height = kBannerUiHeight;
+    PF_STRCPY(def.name, " ");
+    def.uu.id = ID_BANNER;
+    if (const PF_Err e = (*in_data->inter.add_param)(in_data->effect_ref, -1, &def)) return e;
 
     AEFX_CLR_STRUCT(def);
     PF_ADD_TOPIC("Camera", ID_CAMERA_TOPIC);
@@ -456,6 +470,173 @@ std::string pluginFolder() {
 #endif
 }
 
+// ------------------------------------------------------------------------------------
+// Banner at the top of the Effect Controls panel
+// ------------------------------------------------------------------------------------
+
+// Raw BGRA picture embedded as the LENSYUM_BANNER resource: width and height (uint32 LE), pixels.
+struct BannerImage {
+    int w = 0, h = 0;
+    const unsigned char* bgra = nullptr;
+};
+
+const BannerImage& bannerImage() {
+    static const BannerImage img = [] {
+        BannerImage r;
+#ifdef AE_OS_WIN
+        HMODULE self = nullptr;
+        if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCWSTR>(&pluginFolder), &self)) {
+            if (HRSRC res = FindResourceW(self, L"LENSYUM_BANNER", RT_RCDATA)) {
+                const DWORD n = SizeofResource(self, res);
+                HGLOBAL mem = LoadResource(self, res);
+                const unsigned char* p = mem ? static_cast<const unsigned char*>(LockResource(mem)) : nullptr;
+                if (p && n > 8) {
+                    unsigned w = 0, h = 0;
+                    std::memcpy(&w, p, 4);
+                    std::memcpy(&h, p + 4, 4);
+                    if (w > 0 && h > 0 && w < 16384 && h < 16384 && static_cast<size_t>(w) * h * 4 + 8 <= n) {
+                        r.w = static_cast<int>(w);
+                        r.h = static_cast<int>(h);
+                        r.bgra = p + 8;
+                    }
+                }
+            }
+        }
+#endif
+        return r;
+    }();
+    return img;
+}
+
+struct BannerSpan {
+    int l = 0, t = 0, r = 0, b = 0;
+    bool known = false;
+};
+BannerSpan g_bannerTitle, g_bannerControl;
+
+void logLine(const std::string& text) {
+#ifdef AE_OS_WIN
+    char tmp[MAX_PATH + 1] = {0};
+    if (GetTempPathA(MAX_PATH, tmp) > 0) {
+        if (FILE* f = std::fopen((std::string(tmp) + "lensyum_log.txt").c_str(), "a")) {
+            std::fprintf(f, "%s\n", text.c_str());
+            std::fclose(f);
+        }
+    }
+#else
+    (void)text;
+#endif
+}
+
+// The banner is one picture spread over the parameter's title area and its control area: each
+// draw event paints its own share, sized to the whole row (cover fit, centred).
+PF_Err drawBanner(PF_InData* in_data, PF_EventExtra* ev) {
+    const BannerImage& bm = bannerImage();
+    if (!bm.bgra) {
+        static bool logged = false;
+        if (!logged) { logged = true; logLine("banner: resource LENSYUM_BANNER not found"); }
+        return PF_Err_NONE;
+    }
+    BannerSpan cur;
+    cur.l = ev->effect_win.current_frame.left;
+    cur.t = ev->effect_win.current_frame.top;
+    cur.r = ev->effect_win.current_frame.right;
+    cur.b = ev->effect_win.current_frame.bottom;
+    cur.known = true;
+    if (ev->effect_win.area == PF_EA_PARAM_TITLE) g_bannerTitle = cur;
+    else if (ev->effect_win.area == PF_EA_CONTROL) g_bannerControl = cur;
+    else return PF_Err_NONE;
+    const int fw = cur.r - cur.l, fh = cur.b - cur.t;
+    if (fw <= 0 || fh <= 0 || fw > 4096 || fh > 4096) return PF_Err_NONE;
+
+    BannerSpan row = cur;
+    if (g_bannerTitle.known && g_bannerControl.known && std::abs(g_bannerTitle.t - g_bannerControl.t) <= 2) {
+        row.l = std::min(g_bannerTitle.l, g_bannerControl.l);
+        row.r = std::max(g_bannerTitle.r, g_bannerControl.r);
+        row.t = std::min(g_bannerTitle.t, g_bannerControl.t);
+        row.b = std::max(g_bannerTitle.b, g_bannerControl.b);
+    }
+    const double rw = row.r - row.l, rh = row.b - row.t;
+    const double sc = std::max(rw / bm.w, rh / bm.h);
+
+    std::vector<unsigned char> buf(static_cast<size_t>(fw) * fh * 4);
+    auto fetch = [&](double sx, double sy, float* c) {
+        sx = std::min(std::max(sx - 0.5, 0.0), bm.w - 1.001);
+        sy = std::min(std::max(sy - 0.5, 0.0), bm.h - 1.001);
+        const int x0 = static_cast<int>(sx), y0 = static_cast<int>(sy);
+        const float fx = static_cast<float>(sx - x0), fy = static_cast<float>(sy - y0);
+        const unsigned char* p00 = bm.bgra + (static_cast<size_t>(y0) * bm.w + x0) * 4;
+        const unsigned char* p10 = p00 + 4;
+        const unsigned char* p01 = p00 + static_cast<size_t>(bm.w) * 4;
+        const unsigned char* p11 = p01 + 4;
+        for (int k = 0; k < 3; ++k) {
+            const float a = p00[k] + (p10[k] - p00[k]) * fx;
+            const float b = p01[k] + (p11[k] - p01[k]) * fx;
+            c[k] += a + (b - a) * fy;
+        }
+    };
+    for (int y = 0; y < fh; ++y)
+        for (int x = 0; x < fw; ++x) {
+            float c[3] = {0, 0, 0};
+            for (int j = 0; j < 2; ++j)
+                for (int i = 0; i < 2; ++i) {
+                    const double X = cur.l - row.l + x + 0.25 + 0.5 * i, Y = cur.t - row.t + y + 0.25 + 0.5 * j;
+                    fetch((X - rw * 0.5) / sc + bm.w * 0.5, (Y - rh * 0.5) / sc + bm.h * 0.5, c);
+                }
+            unsigned char* q = &buf[(static_cast<size_t>(y) * fw + x) * 4];
+            for (int k = 0; k < 3; ++k) q[k] = static_cast<unsigned char>(std::lround(std::min(c[k] * 0.25f, 255.0f)));
+            q[3] = 255;
+        }
+
+    SPBasicSuite* sp = in_data->pica_basicP;
+    const PF_EffectCustomUISuite1* uiS = nullptr;
+    const DRAWBOT_DrawbotSuite1* drawS = nullptr;
+    const DRAWBOT_SupplierSuite1* supS = nullptr;
+    const DRAWBOT_SurfaceSuite1* surfS = nullptr;
+    const bool haveSuites =
+        sp && sp->AcquireSuite(kPFEffectCustomUISuite, kPFEffectCustomUISuiteVersion1, reinterpret_cast<const void**>(&uiS)) == kSPNoError && uiS &&
+        sp->AcquireSuite(kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent, reinterpret_cast<const void**>(&drawS)) == kSPNoError && drawS &&
+        sp->AcquireSuite(kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent, reinterpret_cast<const void**>(&supS)) == kSPNoError && supS &&
+        sp->AcquireSuite(kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent, reinterpret_cast<const void**>(&surfS)) == kSPNoError && surfS;
+    PF_Err err = PF_Err_NONE;
+    if (haveSuites) {
+        DRAWBOT_DrawRef drawRef = nullptr;
+        DRAWBOT_SupplierRef supplierRef = nullptr;
+        DRAWBOT_SurfaceRef surfaceRef = nullptr;
+        DRAWBOT_ImageRef imageRef = nullptr;
+        err = uiS->PF_GetDrawingReference(ev->contextH, &drawRef);
+        if (!err) err = drawS->GetSupplier(drawRef, &supplierRef);
+        if (!err) err = drawS->GetSurface(drawRef, &surfaceRef);
+        if (!err) err = supS->NewImageFromBuffer(supplierRef, fw, fh, fw * 4, kDRAWBOT_PixelLayout_32BGRA_Straight, buf.data(), &imageRef);
+        if (!err) {
+            DRAWBOT_PointF32 origin;
+            origin.x = static_cast<float>(cur.l);
+            origin.y = static_cast<float>(cur.t);
+            err = surfS->DrawImage(surfaceRef, imageRef, &origin, 1.0f);
+        }
+        if (imageRef) supS->ReleaseObject((DRAWBOT_ObjectRef)imageRef);
+        if (err) logLine("banner: drawing failed, error " + std::to_string(static_cast<int>(err)));
+        ev->evt_out_flags |= PF_EO_HANDLED_EVENT;
+    } else {
+        static bool logged = false;
+        if (!logged) { logged = true; logLine("banner: drawing suites not available"); }
+    }
+    if (sp) {
+        if (surfS) sp->ReleaseSuite(kDRAWBOT_SurfaceSuite, kDRAWBOT_SurfaceSuite_VersionCurrent);
+        if (supS) sp->ReleaseSuite(kDRAWBOT_SupplierSuite, kDRAWBOT_SupplierSuite_VersionCurrent);
+        if (drawS) sp->ReleaseSuite(kDRAWBOT_DrawSuite, kDRAWBOT_DrawSuite_VersionCurrent);
+        if (uiS) sp->ReleaseSuite(kPFEffectCustomUISuite, kPFEffectCustomUISuiteVersion1);
+    }
+    return PF_Err_NONE;
+}
+
+PF_Err handleEvent(PF_InData* in_data, PF_EventExtra* ev) {
+    if (!ev || !ev->contextH || (*ev->contextH)->w_type != PF_Window_EFFECT) return PF_Err_NONE;
+    if (ev->e_type != PF_Event_DRAW || ev->effect_win.index != P_BANNER) return PF_Err_NONE;
+    return drawBanner(in_data, ev);
+}
+
 inline double ratio(const PF_RationalScale& r) { return r.den ? double(r.num) / double(r.den) : 1.0; }
 
 PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* extra) {
@@ -814,8 +995,8 @@ PF_Err About(PF_InData* in_data, PF_OutData* out_data) {
 
 PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data) {
     out_data->my_version = PF_VERSION(LENSYUM_MAJOR, LENSYUM_MINOR, LENSYUM_BUG, PF_Stage_DEVELOP, LENSYUM_BUILD);
-    // Must match AE_Effect_Global_OutFlags / _2 in LensyumPiPL.r.
-    out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
+    // Must match AE_Effect_Global_OutFlags / _2 in LensyumPiPL.r (and the 'global out flags' values in LensyumPiPL.rc).
+    out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE | PF_OutFlag_CUSTOM_UI;
     out_data->out_flags2 = PF_OutFlag2_SUPPORTS_SMART_RENDER | PF_OutFlag2_FLOAT_COLOR_AWARE |
                            PF_OutFlag2_SUPPORTS_THREADED_RENDERING;
     return PF_Err_NONE;
@@ -842,6 +1023,7 @@ extern "C" DllExport PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutDat
         case PF_Cmd_PARAMS_SETUP: err = ParamsSetup(in_data, out_data); break;
         case PF_Cmd_SMART_PRE_RENDER: err = PreRender(in_data, out_data, static_cast<PF_PreRenderExtra*>(extra)); break;
         case PF_Cmd_SMART_RENDER: err = SmartRender(in_data, out_data, static_cast<PF_SmartRenderExtra*>(extra)); break;
+        case PF_Cmd_EVENT: err = handleEvent(in_data, static_cast<PF_EventExtra*>(extra)); break;
         default: break;
         }
     } catch (const std::bad_alloc&) {

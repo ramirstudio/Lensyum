@@ -58,7 +58,7 @@ BEGIN
         "OLGe",             /* global out flags */
         0L,
         4L,
-        33554432L,
+        33587200L,
 
         "MIB8",
         "2LGe",             /* global out flags 2 */

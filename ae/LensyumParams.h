@@ -5,6 +5,7 @@
 
 enum {
     P_INPUT = 0,
+    P_BANNER,
 
     P_CAMERA_TOPIC,
     P_LENS_PRESET,
@@ -226,7 +227,8 @@ enum {
     ID_3D_PITCH,
     ID_3D_RELIEF,
     ID_3D_TOPIC_END,
-    ID_EDGE_CLEAN
+    ID_EDGE_CLEAN,
+    ID_BANNER
 };
 
 // Checkout IDs used between PreRender and SmartRender.
