@@ -9,7 +9,7 @@
 #include "AE_EffectCBSuites.h"
 #include "AE_Macros.h"
 #include "AE_EffectUI.h"
-#include "AE_EffectSuitesOld.h"
+#include "AE_EffectSuites.h"
 #include "adobesdk/DrawbotSuite.h"
 #include "Param_Utils.h"
 #include "SPBasic.h"
