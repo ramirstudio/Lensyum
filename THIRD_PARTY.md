@@ -1,13 +1,13 @@
-# Componenti di terze parti
+# Third-party components
 
-Il codice di Lensyum non contiene codice di terze parti. Il pacchetto installabile include, accanto al plugin, i componenti seguenti, ognuno con la propria licenza:
+Lensyum's own code contains no third-party code. The installable package ships the following components next to the plug-in, each under its own license:
 
-| File | Componente | Licenza |
+| File | Component | License |
 |---|---|---|
-| `lensyum_ort.dll`, `onnxruntime_providers_shared.dll` | ONNX Runtime (Microsoft), pacchetto `Microsoft.ML.OnnxRuntime.DirectML` | MIT |
-| `DirectML.dll` | DirectML (Microsoft), pacchetto `Microsoft.AI.DirectML` | Microsoft DirectML License, ridistribuibile con l'applicazione |
-| `lensyum_depth.onnx` | Depth Anything V2 Small, esportazione ONNX `onnx-community/depth-anything-v2-small` | Apache 2.0 |
+| `lensyum_ort.dll`, `onnxruntime_providers_shared.dll` | ONNX Runtime (Microsoft), package `Microsoft.ML.OnnxRuntime.DirectML` | MIT |
+| `DirectML.dll` | DirectML (Microsoft), package `Microsoft.AI.DirectML` | Microsoft DirectML License, redistributable with the application |
+| `lensyum_depth.onnx` | Depth Anything V2 Small, ONNX export `onnx-community/depth-anything-v2-small` | Apache 2.0 |
 
-Solo la variante Small di Depth Anything V2 è sotto Apache 2.0; le varianti Base, Large e Giant hanno licenza non commerciale e non vanno usate al suo posto in una distribuzione.
+Only the Small variant of Depth Anything V2 is under Apache 2.0; the Base, Large and Giant variants have a non-commercial license and must not be used in its place in a distribution.
 
-L'After Effects SDK serve solo per compilare e non viene ridistribuito. Le prescrizioni ottiche Double-Gauss 50 e Wide 22 sono dati pubblicati (Smith, "Modern Lens Design"); le altre sono progetti originali.
+The After Effects SDK is needed only to build and is not redistributed. The Double-Gauss 50 and Wide 22 optical prescriptions are published data (Smith, "Modern Lens Design"); the others are original designs.

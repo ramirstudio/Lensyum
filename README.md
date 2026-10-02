@@ -1,71 +1,73 @@
 # Lensyum
 
-Lensyum è un effetto di sfocatura ottica per After Effects basato sul ray tracing di prescrizioni di obiettivi reali. La forma del bokeh non è un disco disegnato: nasce tracciando i raggi attraverso le superfici del vetro, per cui cat-eye ai bordi, bordo a bolla di sapone, frange cromatiche e differenze tra primo piano e sfondo sono una conseguenza della lente scelta.
+Lensyum is an optical lens blur plug-in for After Effects. It traces rays through real lens prescriptions, so the shape of the bokeh is not a drawn disc: cat-eye toward the corners, soap-bubble edges, chromatic fringes and the difference between foreground and background all follow from the lens you pick.
 
-## Come funziona
+## How it works
 
-Il progetto ha due parti. `core/` è il motore in C++17, senza dipendenze, compilabile su qualunque piattaforma. `ae/` è il wrapper SmartFX per After Effects (8, 16 e 32 bpc, Multi-Frame Rendering).
+The project has two parts. `core/` is the engine, plain C++17 with no dependencies, buildable on any platform. `ae/` is the SmartFX wrapper for After Effects (8, 16 and 32 bpc, Multi-Frame Rendering). `ARCHITECTURE.md` describes the internals.
 
-Il motore lavora in tre passaggi. Per prima cosa scala la prescrizione alla focale richiesta, misura l'apertura massima reale e mette a fuoco il sensore alla distanza scelta (`Lens.cpp`). Poi, per una serie di posizioni lungo il raggio del fotogramma, traccia da decine a centinaia di migliaia di raggi in sei lunghezze d'onda e registra dove arrivano sul piano del sensore a diversi livelli di sfocatura, davanti e dietro il fuoco (`PsfAtlas.cpp`). Per ogni punto l'atlante conserva la luce che arriva, vignettatura meccanica compresa, e da quale punto della pupilla proviene. L'iride (lamelle, apertura personalizzata, ostruzione centrale, anelli, texture del vetro) viene applicata al momento del render nella sua orientazione fissa: una forma asimmetrica resta dritta in tutto il fotogramma e si capovolge tra sfondo e primo piano, come succede con un obiettivo vero. Infine il renderer (`Renderer.cpp`) divide l'immagine in fette di profondità, proietta su ogni pixel la PSF corrispondente alla sua posizione e alla sua sfocatura, e ricompone le fette dal fondo verso il davanti, così un primo piano sfocato copre correttamente quello che sta dietro. Per le sfocature grandi i pixel vengono aggregati a risoluzione ridotta; le alte luci restano a piena risoluzione fino alla soglia di qualità, così il bordo dei bokeh resta netto.
+The engine works in three steps. First it scales the prescription to the requested focal length, measures the real maximum aperture and focuses the sensor at the chosen distance (`Lens.cpp`). Then, for a series of positions along the frame radius, it traces tens to hundreds of thousands of rays at six wavelengths and records where they land on the sensor at different levels of defocus, in front of and behind focus (`PsfAtlas.cpp`). For every point the atlas keeps the light that arrives, mechanical vignetting included, and which part of the pupil it came from. The iris (blades, custom aperture, central obstruction, rings, glass texture) is applied at render time in its fixed orientation: an asymmetric shape stays upright across the frame and flips between background and foreground, as it does on a real lens. Finally the renderer (`Renderer.cpp`) splits the image into depth slices, spreads the PSF that matches each pixel's position and blur, and composites the slices from back to front, so a blurred foreground correctly covers what is behind it. For large blurs pixels are aggregated at reduced resolution; highlights stay at full resolution up to the quality threshold, so the edges of bokeh discs stay sharp.
 
-La sfocatura può essere uniforme (in pixel) oppure calcolata da una mappa di profondità: in quel caso il raggio di sfocatura di ogni pixel deriva dalla lente vera, cioè da focale, diaframma, distanza di messa a fuoco e dimensione del sensore.
+The blur can be uniform (in pixels) or computed from a depth map. In that case each pixel's blur radius comes from the real lens: focal length, aperture, focus distance and sensor size.
 
-## Controlli
+## Controls
 
-Camera: preset dell'obiettivo (ogni preset ha la sua focale), formato del sensore (full frame, Super 35, APS-C, Micro 4/3, Super 16, Large Format 65 o larghezza personalizzata), diaframma. Se chiedi un diaframma più aperto di quello massimo della lente, viene usato il massimo.
+Camera: lens preset (each preset has its own focal length), sensor format (full frame, Super 35, APS-C, Micro Four Thirds, Super 16, Large Format 65 or a custom width) and F-stop. An aperture wider than the lens maximum is clamped to the maximum.
 
-Focus: sorgente della sfocatura (uniforme, mappa di profondità oppure Focus Region, dove scegli il punto nitido con Focus Point, quanto è grande la zona nitida con Region Radius, quanto è graduale il passaggio con Region Falloff e la forma con Region Aspect, mentre Defocus Amount decide quanto sfocare il resto), layer di profondità con polarità e codifica (distanza lineare o disparità 1/z, il formato tipico delle mappe generate da AI), distanze near/far in metri, distanza di messa a fuoco oppure messa a fuoco su un punto campionato dalla mappa, scala della sfocatura. Depth Edge Clean-up (in pixel, 0 lo spegne) toglie il contorno nitido che compare sui bordi tra un soggetto vicino e uno lontano quando il piano di fuoco sta nel mezzo: i pixel di bordo prendono la sfocatura della superficie più vicina. Ai bordi del livello la scena viene continuata per riflessione, quindi i dischi di bokeh non sbiadiscono né tornano nitidi vicino ai margini; il risultato resta comunque ritagliato ai confini del livello.
+Focus: the source of the blur is Whole Frame, Depth Map, Focus Region or AI Depth. Focus Region keeps a sharp area around the Focus Point: Region Radius sets its size, Region Falloff how gradual the transition is, Region Aspect its shape, Keep Center Untouched leaves the middle exactly as the source, and Defocus Amount decides how much to blur the rest. The depth layer has polarity and encoding (linear distance or 1/z disparity, the usual format of AI-generated maps), near and far distances in metres, a focus distance or focus on a point sampled from the map, and a blur scale. Depth Edge Clean-up (in pixels, 0 turns it off) removes the sharp outline that appears along the edge between a near and a far subject when the plane of focus sits between them: edge pixels take the blur of the nearer surface. At the edges of the layer the picture is continued by reflection, so bokeh discs neither fade nor snap back to sharp near the borders; the result is still cropped to the layer.
 
-AI Depth (auto) stima la profondità direttamente dalla clip con una rete Depth Anything V2 eseguita in locale su GPU (DirectML), fotogramma per fotogramma, senza bisogno di un layer di profondità. Depth Detail sceglie la risoluzione di analisi (Low 392, Medium 518, High 770, Ultra 1022 pixel sul lato lungo), Edge Refine ammorbidisce la mappa seguendo i bordi dell'immagine, Use GPU passa alla CPU se disattivato. La vista Depth Map mostra la profondità usata (bianco vicino, nero lontano). Per regolare la mappa: Focus On Focus Point mette a fuoco la profondità sotto il Focus Point (altrimenti vale Focus Distance), Sharp Range tiene nitida una fascia di profondità attorno al fuoco, Far Cut e Near Cut tagliano gli estremi della mappa, Depth Contrast e Depth Shift la ridistribuiscono, Depth Smooth la ammorbidisce, Invert Depth la capovolge. La vista Focus Overlay mostra il fotogramma con una tinta arancione dietro il piano di fuoco e blu davanti, nitido dove non c'è sfocatura. Show Depth Map è un interruttore che mostra la mappa usata dal render, Show 3D Focus View la mostra come rilievo tridimensionale che puoi ruotare con Orbit e Tilt (Relief regola l'altezza): i punti che restano nitidi sono verdi, il contorno verde è il piano di fuoco, il disco giallo è il Focus Point sull'asse di profondità. Entrambi funzionano con Depth Map e AI Depth. La mappa è normalizzata su ogni fotogramma, quindi su riprese con movimenti forti può oscillare leggermente.
+AI Depth (auto) estimates depth directly from the clip with a Depth Anything V2 network running locally on the GPU (DirectML), frame by frame, with no depth layer needed. Depth Detail sets the analysis resolution (Low 392, Medium 518, High 770, Ultra 1022 pixels on the long side), Edge Refine snaps the map to the edges of the image, and Use GPU falls back to the CPU when switched off. To shape the map: Focus On Focus Point focuses the depth under the Focus Point (otherwise Focus Distance applies), Sharp Range keeps a band of depths around focus sharp, Far Cut and Near Cut clip the ends of the map, Depth Contrast and Depth Shift redistribute it, Depth Smooth softens it and Invert Depth flips it. The map is normalised on every frame, so shots with strong movement can flicker slightly.
 
-Aperture: forma (iride a lamelle oppure cuore, stella, triangolo, rombo, croce, anello, mezzaluna), numero di lamelle, curvatura, rotazione, ostruzione centrale (bokeh a ciambella degli obiettivi catadiottrici), layer da usare come apertura personalizzata.
+Two switches under Defocus Source help while you work. Show Depth Map shows the map the render uses (white is near, black is far). Show 3D Focus View shows it as a relief you can rotate with Orbit and Tilt (Relief sets the height): points that stay sharp are green, the green outline is the plane of focus, and the yellow disc is the Focus Point on the depth axis. Both work with Depth Map and AI Depth. The View menu also offers Blur Map, Bokeh Grid and Focus Overlay, which tints the frame orange behind the plane of focus and blue in front of it.
 
-Creative: Impression (positivo bordo netto e luminoso, negativo disco morbido), Coma, Astigmatism in millimetri di spostamento del fuoco tra direzione radiale e tangenziale all'angolo, Field Curvature in millimetri (gli angoli vanno fuori fuoco), Zonal Ripple con densità (anelli concentrici), Lobes con numero, forma, angolo e orientamento verso il centro, aberrazione cromatica attivabile (Bokeh Fringing per le frange colorate sui dischi, Lateral CA per lo spostamento rosso/blu verso i bordi che si vede anche sulle zone nitide), Cat-Eye (vignettatura meccanica), squeeze anamorfico, Bokeh Imperfections (polvere e grana dentro i dischi) con scala e seed, Lens Coverage, Filmback Offset.
+Aperture: shape (iris blades, heart, star, triangle, diamond, cross, ring or crescent), blade count, curvature, rotation, central obstruction (donut bokeh of mirror lenses) and a layer to use as a custom aperture.
 
-Layers: Rain Layer (una mappa di gocce: le gocce fuori fuoco compaiono dentro ogni disco di bokeh, quelle a fuoco deformano l'immagine), con distanza, intensità e rifrazione; Shimmer, scintillii dentro i dischi che cambiano a ogni fotogramma, con densità e seed.
+Creative: Impression (positive gives a sharp bright edge, negative a soft disc), Coma, Astigmatism in millimetres of focus shift between the radial and tangential direction at the corner, Field Curvature in millimetres (corners go out of focus), Zonal Ripple with density (concentric rings), Lobes with count, shape, angle and orientation toward the centre, optional chromatic aberration (Bokeh Fringing for coloured fringes on the discs, Lateral CA for the red/blue shift toward the edges that also shows on sharp areas), Cat-Eye (mechanical vignetting), anamorphic squeeze, Bokeh Imperfections (dust and grain inside the discs) with scale and seed, Lens Coverage and Filmback Offset.
 
-Highlights: soglia e boost delle alte luci prima della sfocatura, per recuperare la luminosità che il footage a 8/16 bit ha perso nel clipping.
+Layers: Rain Layer (a drop map: out-of-focus drops show up inside every bokeh disc, in-focus drops bend the image) with distance, strength and refraction, and Shimmer, sparkles inside the discs that change on every frame, with density and seed.
 
-Render: qualità, raggio massimo, numero di fette di profondità, spazio di lavoro (Auto decodifica sRGB a 8/16 bpc e considera lineare il 32 bpc), centro ottico, vista (risultato, mappa di sfocatura, griglia di bokeh per controllare la lente su tutto il fotogramma).
+Highlights: threshold and boost of the highlights before blurring, to recover the brightness that 8/16 bit footage lost to clipping.
 
-## Obiettivi
+Render: quality, maximum blur radius, number of depth slices, working space (Auto decodes sRGB at 8/16 bpc and treats 32 bpc as linear), optical centre and view (Result, Blur Map, Bokeh Grid, Depth Map, Focus Overlay).
 
-Double-Gauss 50 f/2 e Wide 22 f/2.8 sono prescrizioni pubblicate (brevetto Tronnier e progetto Nakamura, come tabulati in Smith, "Modern Lens Design"). Double-Gauss 58 f/2.2 Swirl usa lo stesso vetro con il gruppo posteriore più chiuso dalla montatura, per un cat-eye e uno swirl più forti. Cooke Triplet 50 f/2.8, Tessar 50 f/3.5 e Petzval 85 f/2.2 sono progetti Lensyum nelle forme classiche: vetri di catalogo, curvature ottimizzate su raggi reali per il campo del full frame, diametri utili ricavati dai fasci tracciati. Il Wide 22 copre Super 35 e APS-C; su full frame gli angoli cadono molto.
+## Lenses
 
-## Installare
+Double-Gauss 50 f/2 and Wide 22 f/2.8 are published prescriptions (Tronnier patent and Nakamura design, as tabulated in Smith, "Modern Lens Design"). Double-Gauss 58 f/2.2 Swirl uses the same glass with the rear group stopped down by the barrel, for stronger cat-eye and swirl. Cooke Triplet 50 f/2.8, Tessar 50 f/3.5 and Petzval 85 f/2.2 are Lensyum designs in the classic forms: catalogue glass, curvatures optimised on real rays for the full frame field, useful diameters taken from the traced beams. The Wide 22 covers Super 35 and APS-C; on full frame the corners fall off sharply.
 
-Il pacchetto `Lensyum-1.0-win64.zip` contiene il plugin, ONNX Runtime, DirectML e il modello di profondità. Va estratto in `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\Lensyum\` con After Effects chiuso; le istruzioni sono anche in `INSTALL.txt` dentro lo zip. Licenze dei componenti inclusi in `THIRD_PARTY.md`.
+## Install
 
-## Compilare il plugin su Windows
+The `Lensyum-1.0-win64.zip` package contains the plug-in, ONNX Runtime, DirectML and the depth model. Extract it into `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\Lensyum\` with After Effects closed; the same steps are in `INSTALL.txt` inside the zip. Licenses of the bundled components are in `THIRD_PARTY.md`.
 
-Servono Visual Studio 2022 o successivo con il workload "Sviluppo di applicazioni desktop con C++", CMake 3.20 o successivo (quello incluso in Visual Studio va bene) e l'After Effects SDK dalla Adobe Developer Console, estratto per esempio in `C:\SDK\AfterEffectsSDK` (deve contenere `Examples\Headers`). Per AI Depth servono anche il pacchetto NuGet `Microsoft.ML.OnnxRuntime.DirectML` estratto in `C:\SDK\ort` e `Microsoft.AI.DirectML` estratto in `C:\SDK\dml` (i `.nupkg` sono zip); CMake trova da solo `C:\SDK\ort`, altrimenti si passa `-DORT_INCLUDE_DIR`.
+## Build on Windows
 
-Da "x64 Native Tools Command Prompt for VS", nella cartella del progetto:
+You need Visual Studio 2022 or later with the "Desktop development with C++" workload, CMake 3.20 or later (the one bundled with Visual Studio works) and the After Effects SDK from the Adobe Developer Console, extracted for example to `C:\SDK\AfterEffectsSDK` (it must contain `Examples\Headers`). For AI Depth you also need the NuGet package `Microsoft.ML.OnnxRuntime.DirectML` extracted to `C:\SDK\ort` and `Microsoft.AI.DirectML` extracted to `C:\SDK\dml` (`.nupkg` files are zip archives). CMake finds `C:\SDK\ort` by itself; otherwise pass `-DORT_INCLUDE_DIR`.
+
+From "x64 Native Tools Command Prompt for VS", in the project folder:
 
 ```
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAE_SDK_DIR="C:/SDK/AfterEffectsSDK"
 cmake --build build --target Lensyum
 ```
 
-Il risultato è `build\ae\Lensyum.aex`. `package.bat` ricompila e crea `dist\Lensyum-1.0-win64.zip` con plugin, DLL e modello; il modello (`model.onnx` di `huggingface.co/onnx-community/depth-anything-v2-small`, rinominato `lensyum_depth.onnx`) viene preso dalla variabile `MODEL` o dalla cartella MediaCore se è già installato. Il banner in cima al pannello si disattiva con `-DLENSYUM_BANNER=OFF`.
+The result is `build\ae\Lensyum.aex`. `package.bat` rebuilds and creates `dist\Lensyum-1.0-win64.zip` with the plug-in, the DLLs and the model. The model (`model.onnx` from `huggingface.co/onnx-community/depth-anything-v2-small`, renamed `lensyum_depth.onnx`) is taken from the `MODEL` variable, or from the MediaCore folder if it is already installed. The banner at the top of the panel can be turned off with `-DLENSYUM_BANNER=OFF`.
 
-Se AI Depth non trova runtime o modello, il fotogramma diventa rosso pieno e il motivo è scritto in `%TEMP%\lensyum_log.txt`.
+If AI Depth cannot find the runtime or the model, the frame turns solid red and the reason is written to `%TEMP%\lensyum_log.txt`.
 
-## Provare il motore senza After Effects
+## Test the engine without After Effects
 
 ```
 cmake -S . -B build
 cmake --build build --config Release --target lensyum_cli
 build/lensyum_cli lenses
-build/lensyum_cli grid griglia.ppm amount=40 blades=7 curv=0.3
-build/lensyum_cli scene scena.ppm focus=3 N=2 gain=8
-build/lensyum_cli image foto.ppm out.ppm depth=profondita.pgm focus=2.5
+build/lensyum_cli grid grid.ppm amount=40 blades=7 curv=0.3
+build/lensyum_cli scene scene.ppm focus=3 N=2 gain=8
+build/lensyum_cli image photo.ppm out.ppm depth=depth.pgm focus=2.5
 ```
 
-Le opzioni sono coppie `chiave=valore` (`lens`, `N`, `focus` in metri, `sensor`, `blades`, `curv`, `rot`, `obst`, `mask=file.pgm`, `onion`, `lobes`, `lobecount`, `texture`, `cateye`, `ca`, `imp`, `coma`, `astig` e `fc` in mm, `squeeze`, `gain`, `thr`, `amount`, `quality`, `maxblur`, `layers`, `view`; per la profondità AI `aimodel=modello.onnx`, `ort=libreria onnxruntime`, `aires`, `refine`).
+Options are `key=value` pairs (`lens`, `N`, `focus` in metres, `sensor`, `blades`, `curv`, `rot`, `obst`, `mask=file.pgm`, `onion`, `lobes`, `lobecount`, `texture`, `cateye`, `ca`, `imp`, `coma`, `astig` and `fc` in mm, `squeeze`, `gain`, `thr`, `amount`, `quality`, `maxblur`, `layers`, `view`, `pad` to emulate After Effects' transparent padding; for AI depth `aimodel=model.onnx`, `ort=onnxruntime library`, `aires`, `refine`).
 
-## Stato
+## Status
 
-Motore su CPU, multi-thread. A 1080p su 4 core il tracciamento della lente richiede circa 0,6 s (solo quando cambiano obiettivo, diaframma, formato o i controlli Creative che agiscono sui raggi) e il render di un fotogramma da 0,3 a 0,8 s. La stima AI della profondità gira su GPU tramite DirectML. Limiti noti: solo Windows; la mappa AI è normalizzata per fotogramma e può oscillare nelle riprese con forti cambi di scena; il render resta su CPU, quindi l'anteprima non è in tempo reale ad alte risoluzioni.
+The engine runs on the CPU, multi-threaded. At 1080p on 4 cores, tracing the lens takes about 0.6 s (only when the lens, aperture, format or the Creative controls that act on rays change) and rendering a frame takes 0.3 to 0.8 s. AI depth estimation runs on the GPU through DirectML. Known limits: Windows only; the AI map is normalised per frame and can flicker on shots with sharp scene changes; rendering is on the CPU, so the preview is not real time at high resolutions.
 
-Licenza: vedi LICENSE (tutti i diritti riservati). I componenti di terze parti hanno le licenze indicate in THIRD_PARTY.md.
+License: see LICENSE (all rights reserved). Third-party components keep the licenses listed in THIRD_PARTY.md.

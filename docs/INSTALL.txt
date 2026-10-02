@@ -1,22 +1,23 @@
-Lensyum 1.0 per After Effects (Windows 64 bit)
+Lensyum 1.0 for After Effects (Windows, 64 bit)
 
-Installazione
-1. Chiudi After Effects.
-2. Copia tutti i file di questa cartella in
+Installation
+1. Close After Effects.
+2. Copy all the files of this folder to
    C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\Lensyum\
-   (crea la cartella Lensyum se non esiste; servono i permessi di amministratore).
-3. Riapri After Effects. L'effetto si trova in Effetto > Lensyum > Lensyum.
+   (create the Lensyum folder if it does not exist; administrator rights are required).
+3. Reopen After Effects. The effect is under Effect > Lensyum > Lensyum.
 
-I file devono restare insieme nella stessa cartella:
-  Lensyum.aex                        il plugin
-  lensyum_ort.dll                    ONNX Runtime, per AI Depth
+The files must stay together in the same folder:
+  Lensyum.aex                        the plug-in
+  lensyum_ort.dll                    ONNX Runtime, for AI Depth
   onnxruntime_providers_shared.dll   ONNX Runtime
-  DirectML.dll                       accelerazione GPU per AI Depth
-  lensyum_depth.onnx                 modello Depth Anything V2 Small
+  DirectML.dll                       GPU acceleration for AI Depth
+  lensyum_depth.onnx                 Depth Anything V2 Small model
 
-Senza le DLL o il modello l'effetto funziona lo stesso; solo la modalita
-"AI Depth (auto)" mostra il fotogramma rosso. Il motivo dell'errore e' scritto in
+Without the DLLs or the model the effect still works; only the "AI Depth (auto)"
+mode shows a solid red frame. The reason is written to
 %TEMP%\lensyum_log.txt.
 
-Requisiti: After Effects 2026 (provato con SDK 26.5; le versioni precedenti non sono state verificate), Windows 10 o 11 a 64 bit, una GPU DirectX 12 per AI Depth su GPU
-(altrimenti disattiva Use GPU e la stima gira sulla CPU).
+Requirements: After Effects 2026 (tested with SDK 26.5; earlier versions have not been
+tested), Windows 10 or 11 64 bit, a DirectX 12 GPU for AI Depth on the GPU
+(otherwise switch off Use GPU and the estimate runs on the CPU).

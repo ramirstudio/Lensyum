@@ -1,20 +1,19 @@
 Lensyum
-Copyright (c) 2026 RAMIR Studio. Tutti i diritti riservati.
+Copyright (c) 2026 RAMIR Studio. All rights reserved.
 
-Il software Lensyum (codice sorgente, plugin compilato, documentazione e
-immagini) e' di proprieta' esclusiva di RAMIR Studio.
+The Lensyum software (source code, compiled plug-in, documentation and images)
+is the exclusive property of RAMIR Studio.
 
-Chi ottiene una copia del plugin compilato da RAMIR Studio o da un rivenditore
-autorizzato puo' installarlo e usarlo, anche per lavori commerciali, sui
-propri computer. Non e' consentito, senza autorizzazione scritta:
-copiare, modificare, decompilare o ridistribuire il software o il codice
-sorgente, in tutto o in parte; venderlo, noleggiarlo o includerlo in altri
-prodotti.
+Anyone who obtains a copy of the compiled plug-in from RAMIR Studio or from an
+authorised reseller may install and use it on their own computers, including for
+commercial work. Without written permission it is not allowed to copy, modify,
+decompile or redistribute the software or its source code, in whole or in part,
+or to sell it, rent it or include it in other products.
 
-I componenti di terze parti inclusi nel pacchetto (ONNX Runtime, DirectML,
-modello Depth Anything V2 Small) restano soggetti alle rispettive licenze,
-elencate in THIRD_PARTY.md.
+The third-party components included in the package (ONNX Runtime, DirectML,
+Depth Anything V2 Small model) remain subject to their own licenses, listed in
+THIRD_PARTY.md.
 
-IL SOFTWARE E' FORNITO "COSI' COM'E'", SENZA GARANZIE DI ALCUN TIPO, ESPLICITE
-O IMPLICITE. IN NESSUN CASO RAMIR STUDIO E' RESPONSABILE DI DANNI DERIVANTI
-DALL'USO O DALL'IMPOSSIBILITA' DI USARE IL SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL RAMIR STUDIO BE LIABLE FOR ANY DAMAGES ARISING FROM
+THE USE OF, OR THE INABILITY TO USE, THE SOFTWARE.
