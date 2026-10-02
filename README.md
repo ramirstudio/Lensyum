@@ -67,3 +67,5 @@ Le opzioni sono coppie `chiave=valore` (`lens`, `N`, `focus` in metri, `sensor`,
 ## Stato
 
 Motore su CPU, multi-thread. A 1080p su 4 core il tracciamento della lente richiede circa 0,6 s (solo quando cambiano obiettivo, diaframma, formato o i controlli Creative che agiscono sui raggi) e il render di un fotogramma da 0,3 a 0,8 s. La stima AI della profondità gira su GPU tramite DirectML. Limiti noti: solo Windows; la mappa AI è normalizzata per fotogramma e può oscillare nelle riprese con forti cambi di scena; il render resta su CPU, quindi l'anteprima non è in tempo reale ad alte risoluzioni.
+
+Licenza: vedi LICENSE (tutti i diritti riservati). I componenti di terze parti hanno le licenze indicate in THIRD_PARTY.md.

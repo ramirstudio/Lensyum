@@ -33,6 +33,7 @@ mkdir "%OUT%"
 copy /y "%AEX%" "%OUT%\" >nul
 copy /y README.md "%OUT%\" >nul
 copy /y THIRD_PARTY.md "%OUT%\" >nul
+copy /y LICENSE "%OUT%\LICENSE.txt" >nul
 copy /y docs\INSTALL.txt "%OUT%\" >nul
 
 set AI=1

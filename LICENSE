@@ -1,0 +1,20 @@
+Lensyum
+Copyright (c) 2026 RAMIR Studio. Tutti i diritti riservati.
+
+Il software Lensyum (codice sorgente, plugin compilato, documentazione e
+immagini) e' di proprieta' esclusiva di RAMIR Studio.
+
+Chi ottiene una copia del plugin compilato da RAMIR Studio o da un rivenditore
+autorizzato puo' installarlo e usarlo, anche per lavori commerciali, sui
+propri computer. Non e' consentito, senza autorizzazione scritta:
+copiare, modificare, decompilare o ridistribuire il software o il codice
+sorgente, in tutto o in parte; venderlo, noleggiarlo o includerlo in altri
+prodotti.
+
+I componenti di terze parti inclusi nel pacchetto (ONNX Runtime, DirectML,
+modello Depth Anything V2 Small) restano soggetti alle rispettive licenze,
+elencate in THIRD_PARTY.md.
+
+IL SOFTWARE E' FORNITO "COSI' COM'E'", SENZA GARANZIE DI ALCUN TIPO, ESPLICITE
+O IMPLICITE. IN NESSUN CASO RAMIR STUDIO E' RESPONSABILE DI DANNI DERIVANTI
+DALL'USO O DALL'IMPOSSIBILITA' DI USARE IL SOFTWARE.
