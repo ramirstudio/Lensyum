@@ -4,3 +4,4 @@ out/
 *.pgm
 .vs/
 *.aex
+dist/

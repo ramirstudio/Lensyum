@@ -49,7 +49,6 @@ constexpr int kBannerUiWidth = 200;  // hint only: the banner is drawn across th
 constexpr int kBannerUiHeight = 150;
 
 void logLine(const std::string& text);
-void logStep(const char* what);
 
 const std::string& lensPopupString() {
     static const std::string s = [] {
@@ -309,7 +308,6 @@ PF_Err ParamsSetup(PF_InData* in_data, PF_OutData* out_data) {
     PF_END_TOPIC(ID_RENDER_TOPIC_END);
 
     out_data->num_params = P_COUNT;
-    logStep("ParamsSetup done");
     return PF_Err_NONE;
 }
 
@@ -507,12 +505,6 @@ void logLine(const std::string& text) {
 #endif
 }
 
-// Progress marks for the first calls of each process, so a crash can be placed from the log.
-void logStep(const char* what) {
-    static std::atomic<int> count{0};
-    if (count.fetch_add(1) < 160) logLine(what);
-}
-
 #ifdef LENSYUM_BANNER
 // ------------------------------------------------------------------------------------
 // Banner at the top of the Effect Controls panel
@@ -662,17 +654,6 @@ PF_Err drawBanner(PF_InData* in_data, PF_EventExtra* ev) {
 }
 
 PF_Err handleEvent(PF_InData* in_data, PF_EventExtra* ev) {
-    {
-        // The first events are written to the log so the panel geometry can be inspected.
-        static int logged = 0;
-        if (ev && ev->contextH && logged < 60 && ev->e_type != PF_Event_IDLE && ev->e_type != PF_Event_ADJUST_CURSOR) {
-            ++logged;
-            logLine("event type " + std::to_string(static_cast<int>(ev->e_type)) + " window " + std::to_string(static_cast<int>((*ev->contextH)->w_type)) +
-                    " index " + std::to_string(static_cast<int>(ev->effect_win.index)) + " area " + std::to_string(static_cast<int>(ev->effect_win.area)) +
-                    " frame " + std::to_string(ev->effect_win.current_frame.left) + "," + std::to_string(ev->effect_win.current_frame.top) + "," +
-                    std::to_string(ev->effect_win.current_frame.right) + "," + std::to_string(ev->effect_win.current_frame.bottom));
-        }
-    }
     if (!ev || !ev->contextH || (*ev->contextH)->w_type != PF_Window_EFFECT) return PF_Err_NONE;
     if (ev->e_type != PF_Event_DRAW || ev->effect_win.index != P_BANNER) return PF_Err_NONE;
     return drawBanner(in_data, ev);
@@ -683,7 +664,6 @@ inline double ratio(const PF_RationalScale& r) { return r.den ? double(r.num) / 
 
 PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* extra) {
     PF_Err err = PF_Err_NONE;
-    logStep("PreRender begin");
     ParamReader pr(in_data);
     const double maxBlur = pr.num(P_MAX_BLUR);
     const double squeeze = std::max(pr.num(P_SQUEEZE), 1.0);
@@ -752,13 +732,11 @@ PF_Err PreRender(PF_InData* in_data, PF_OutData* out_data, PF_PreRenderExtra* ex
     if (prd->par <= 0) prd->par = ratio(in_data->pixel_aspect_ratio);
     extra->output->pre_render_data = prd;
     extra->output->delete_pre_render_data_func = deletePreRenderData;
-    logStep("PreRender end");
     return err;
 }
 
 PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra* extra) {
     PF_Err err = PF_Err_NONE, err2 = PF_Err_NONE;
-    logStep("SmartRender begin");
     const PreRenderData* prd = static_cast<const PreRenderData*>(extra->input->pre_render_data);
     if (!prd) return PF_Err_BAD_CALLBACK_PARAM;
 
@@ -780,7 +758,6 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         if (apW) ERR(pixelFormat(in_data, apW, ap.fmt));
         if (rainW) ERR(pixelFormat(in_data, rainW, rain.fmt));
 
-        logStep("SmartRender worlds ready");
         ParamReader pr(in_data);
         RenderSettings rs;
         OpticsSettings& o = rs.optics;
@@ -994,9 +971,7 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
                 }
             }
 
-            logStep("SmartRender before renderDefocus");
             renderDefocus(src, dst, rs);
-            logStep("SmartRender after renderDefocus");
 
             // Missing model or runtime: show the frame flat red so it cannot be mistaken for an effect.
             if (aiFailed)
@@ -1028,7 +1003,6 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
         }
     }
 
-    logStep("SmartRender copied output");
     ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_INPUT));
     if (depthW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_DEPTH));
     if (apW) ERR2(extra->cb->checkin_layer_pixels(in_data->effect_ref, CHECKOUT_APERTURE));
@@ -1037,14 +1011,13 @@ PF_Err SmartRender(PF_InData* in_data, PF_OutData* out_data, PF_SmartRenderExtra
 }
 
 PF_Err About(PF_InData* in_data, PF_OutData* out_data) {
-    PF_SPRINTF(out_data->return_msg, "%s %d.%d (build %s %s)\rPhysically based lens defocus: real lens prescriptions, ray-traced bokeh.",
-               LENSYUM_NAME, LENSYUM_MAJOR, LENSYUM_MINOR, __DATE__, __TIME__);
+    PF_SPRINTF(out_data->return_msg, "%s %d.%d\rPhysically based lens defocus: real lens prescriptions, ray-traced bokeh.",
+               LENSYUM_NAME, LENSYUM_MAJOR, LENSYUM_MINOR);
     return PF_Err_NONE;
 }
 
 PF_Err GlobalSetup(PF_InData* in_data, PF_OutData* out_data) {
-    logStep("GlobalSetup");
-    out_data->my_version = PF_VERSION(LENSYUM_MAJOR, LENSYUM_MINOR, LENSYUM_BUG, PF_Stage_DEVELOP, LENSYUM_BUILD);
+    out_data->my_version = PF_VERSION(LENSYUM_MAJOR, LENSYUM_MINOR, LENSYUM_BUG, PF_Stage_RELEASE, LENSYUM_BUILD);
     // Must match AE_Effect_Global_OutFlags / _2 in LensyumPiPL.r (and the 'global out flags' values in LensyumPiPL.rc).
     out_data->out_flags = PF_OutFlag_DEEP_COLOR_AWARE;
 #ifdef LENSYUM_BANNER
@@ -1069,14 +1042,6 @@ extern "C" DllExport PF_Err PluginDataEntryFunction2(PF_PluginDataPtr inPtr, PF_
 extern "C" DllExport PF_Err EffectMain(PF_Cmd cmd, PF_InData* in_data, PF_OutData* out_data, PF_ParamDef* params[],
                                        PF_LayerDef* output, void* extra) {
     PF_Err err = PF_Err_NONE;
-    {
-        // Each command number is written to the log the first time it arrives.
-        static unsigned long long seen = 0;
-        if (cmd >= 0 && cmd < 64 && !(seen & (1ULL << cmd))) {
-            seen |= 1ULL << cmd;
-            logLine(std::string("build ") + __DATE__ + " " + __TIME__ + ": first command " + std::to_string(static_cast<int>(cmd)));
-        }
-    }
     try {
         switch (cmd) {
         case PF_Cmd_ABOUT: err = About(in_data, out_data); break;

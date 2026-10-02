@@ -1,0 +1,22 @@
+Lensyum 1.0 per After Effects (Windows 64 bit)
+
+Installazione
+1. Chiudi After Effects.
+2. Copia tutti i file di questa cartella in
+   C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\Lensyum\
+   (crea la cartella Lensyum se non esiste; servono i permessi di amministratore).
+3. Riapri After Effects. L'effetto si trova in Effetto > Lensyum > Lensyum.
+
+I file devono restare insieme nella stessa cartella:
+  Lensyum.aex                        il plugin
+  lensyum_ort.dll                    ONNX Runtime, per AI Depth
+  onnxruntime_providers_shared.dll   ONNX Runtime
+  DirectML.dll                       accelerazione GPU per AI Depth
+  lensyum_depth.onnx                 modello Depth Anything V2 Small
+
+Senza le DLL o il modello l'effetto funziona lo stesso; solo la modalita
+"AI Depth (auto)" mostra il fotogramma rosso. Il motivo dell'errore e' scritto in
+%TEMP%\lensyum_log.txt.
+
+Requisiti: After Effects 2022 o successivo, una GPU DirectX 12 per AI Depth su GPU
+(altrimenti disattiva Use GPU e la stima gira sulla CPU).

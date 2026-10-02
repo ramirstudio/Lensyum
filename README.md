@@ -30,22 +30,26 @@ Render: qualità, raggio massimo, numero di fette di profondità, spazio di lavo
 
 ## Obiettivi
 
-Double-Gauss 50 f/2 e Wide 22 f/2.8 sono prescrizioni pubblicate (brevetto Tronnier e progetto Nakamura, come tabulati in Smith, "Modern Lens Design"). Double-Gauss 58 f/2.2 Swirl usa lo stesso vetro con il gruppo posteriore più chiuso dalla montatura, per un cat-eye e uno swirl più forti. Cooke Triplet 50 f/2.8, Tessar 50 f/3.5 e Petzval 85 f/2 sono progetti Lensyum nelle forme classiche: vetri di catalogo, curvature ottimizzate su raggi reali per il campo del full frame, diametri utili ricavati dai fasci tracciati. Il Wide 22 copre Super 35 e APS-C; su full frame gli angoli cadono molto.
+Double-Gauss 50 f/2 e Wide 22 f/2.8 sono prescrizioni pubblicate (brevetto Tronnier e progetto Nakamura, come tabulati in Smith, "Modern Lens Design"). Double-Gauss 58 f/2.2 Swirl usa lo stesso vetro con il gruppo posteriore più chiuso dalla montatura, per un cat-eye e uno swirl più forti. Cooke Triplet 50 f/2.8, Tessar 50 f/3.5 e Petzval 85 f/2.2 sono progetti Lensyum nelle forme classiche: vetri di catalogo, curvature ottimizzate su raggi reali per il campo del full frame, diametri utili ricavati dai fasci tracciati. Il Wide 22 copre Super 35 e APS-C; su full frame gli angoli cadono molto.
+
+## Installare
+
+Il pacchetto `Lensyum-1.0-win64.zip` contiene il plugin, ONNX Runtime, DirectML e il modello di profondità. Va estratto in `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\Lensyum\` con After Effects chiuso; le istruzioni sono anche in `INSTALL.txt` dentro lo zip. Licenze dei componenti inclusi in `THIRD_PARTY.md`.
 
 ## Compilare il plugin su Windows
 
-Servono Visual Studio 2022 con il workload "Sviluppo di applicazioni desktop con C++", CMake 3.20 o successivo (quello incluso in Visual Studio va bene) e l'After Effects SDK, scaricabile gratis dalla Adobe Developer Console. Estrai l'SDK in una cartella, per esempio `C:\SDK\AfterEffectsSDK`, che deve contenere `Examples\Headers` ed `Examples\Resources\PiPLtool.exe`.
+Servono Visual Studio 2022 o successivo con il workload "Sviluppo di applicazioni desktop con C++", CMake 3.20 o successivo (quello incluso in Visual Studio va bene) e l'After Effects SDK dalla Adobe Developer Console, estratto per esempio in `C:\SDK\AfterEffectsSDK` (deve contenere `Examples\Headers`). Per AI Depth servono anche il pacchetto NuGet `Microsoft.ML.OnnxRuntime.DirectML` estratto in `C:\SDK\ort` e `Microsoft.AI.DirectML` estratto in `C:\SDK\dml` (i `.nupkg` sono zip); CMake trova da solo `C:\SDK\ort`, altrimenti si passa `-DORT_INCLUDE_DIR`.
 
-Da "x64 Native Tools Command Prompt for VS 2022":
+Da "x64 Native Tools Command Prompt for VS", nella cartella del progetto:
 
 ```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DAE_SDK_DIR="C:/SDK/AfterEffectsSDK"
-cmake --build build --config Release --target Lensyum
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DAE_SDK_DIR="C:/SDK/AfterEffectsSDK"
+cmake --build build --target Lensyum
 ```
 
-Il file `build\ae\Release\Lensyum.aex` va copiato in `C:\Program Files\Adobe\Common\Plug-ins\7.0\MediaCore\` (anche in una sottocartella). Aggiungendo `-DLENSYUM_INSTALL_DIR="C:/Program Files/Adobe/Common/Plug-ins/7.0/MediaCore/Lensyum"` la copia avviene a ogni build (serve il prompt come amministratore). L'effetto compare in Effetti > Lensyum.
+Il risultato è `build\ae\Lensyum.aex`. `package.bat` ricompila e crea `dist\Lensyum-1.0-win64.zip` con plugin, DLL e modello; il modello (`model.onnx` di `huggingface.co/onnx-community/depth-anything-v2-small`, rinominato `lensyum_depth.onnx`) viene preso dalla variabile `MODEL` o dalla cartella MediaCore se è già installato. Il banner in cima al pannello si disattiva con `-DLENSYUM_BANNER=OFF`.
 
-Per AI Depth servono ONNX Runtime e il modello, che non sono nel repository. Scarica il pacchetto NuGet `Microsoft.ML.OnnxRuntime.DirectML` da nuget.org (è uno zip con estensione `.nupkg`) ed estrailo. Compila aggiungendo `-DORT_INCLUDE_DIR="<cartella estratta>/build/native/include"` al primo comando cmake. Nella cartella dove hai messo `Lensyum.aex` copia `runtimes/win-x64/native/onnxruntime.dll` rinominandolo `lensyum_ort.dll` e `DirectML.dll` (stesso pacchetto o pacchetto NuGet `Microsoft.AI.DirectML`, `bin/x64-win/DirectML.dll`). Scarica poi `onnx/model.onnx` da `huggingface.co/onnx-community/depth-anything-v2-small` (licenza Apache 2.0), rinominalo `lensyum_depth.onnx` e mettilo nella stessa cartella. Se qualcosa manca, con AI Depth attivo l'immagine diventa rossastra.
+Se AI Depth non trova runtime o modello, il fotogramma diventa rosso pieno e il motivo è scritto in `%TEMP%\lensyum_log.txt`.
 
 ## Provare il motore senza After Effects
 
@@ -62,4 +66,4 @@ Le opzioni sono coppie `chiave=valore` (`lens`, `N`, `focus` in metri, `sensor`,
 
 ## Stato
 
-Motore su CPU, multi-thread. A 1080p su 4 core il tracciamento della lente richiede circa 0,6 s (solo quando cambiano obiettivo, diaframma, formato o i controlli Creative che agiscono sui raggi) e il render di un fotogramma da 0,3 a 0,8 s. Prossimi passi: porting su GPU (CUDA) per l'anteprima interattiva, layer extra a profondità propria, filtro frontale (sporco, paraluce) e i layer di pioggia e glitter.
+Motore su CPU, multi-thread. A 1080p su 4 core il tracciamento della lente richiede circa 0,6 s (solo quando cambiano obiettivo, diaframma, formato o i controlli Creative che agiscono sui raggi) e il render di un fotogramma da 0,3 a 0,8 s. La stima AI della profondità gira su GPU tramite DirectML. Limiti noti: solo Windows; la mappa AI è normalizzata per fotogramma e può oscillare nelle riprese con forti cambi di scena; il render resta su CPU, quindi l'anteprima non è in tempo reale ad alte risoluzioni.

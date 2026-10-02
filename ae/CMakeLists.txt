@@ -19,10 +19,9 @@ set(PIPL_RC "${CMAKE_CURRENT_SOURCE_DIR}/LensyumPiPL.rc")
 # After Effects then ignores.
 enable_language(RC)
 
-# Experimental: a banner picture at the top of the Effect Controls panel (custom UI). Off by
-# default. The picture is a raw BGRA file (8-byte width/height header) embedded as a resource; the
+# Banner picture at the top of the Effect Controls panel (custom UI, on by default). The picture is a raw BGRA file (8-byte width/height header) embedded as a resource; the
 # .rc is generated so it can name the file by absolute path.
-option(LENSYUM_BANNER "Banner image in the Effect Controls panel (experimental)" OFF)
+option(LENSYUM_BANNER "Banner image at the top of the Effect Controls panel" ON)
 set(BANNER_SOURCES "")
 if(LENSYUM_BANNER)
     set(BANNER_BIN "${CMAKE_CURRENT_SOURCE_DIR}/LensyumBanner.bin")
