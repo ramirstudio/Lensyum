@@ -18,5 +18,5 @@ Senza le DLL o il modello l'effetto funziona lo stesso; solo la modalita
 "AI Depth (auto)" mostra il fotogramma rosso. Il motivo dell'errore e' scritto in
 %TEMP%\lensyum_log.txt.
 
-Requisiti: After Effects 2022 o successivo, una GPU DirectX 12 per AI Depth su GPU
+Requisiti: After Effects 2026 (provato con SDK 26.5; le versioni precedenti non sono state verificate), Windows 10 o 11 a 64 bit, una GPU DirectX 12 per AI Depth su GPU
 (altrimenti disattiva Use GPU e la stima gira sulla CPU).
