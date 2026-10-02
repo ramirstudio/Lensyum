@@ -44,7 +44,21 @@ bool readPnm(const char* path, int& w, int& h, int& channels, std::vector<float>
     return true;
 }
 
+void writePfm(const char* path, const Image& img) {
+    FILE* f = std::fopen(path, "wb");
+    if (!f) return;
+    std::fprintf(f, "PF\n%d %d\n-1.0\n", img.width, img.height);
+    for (int y = img.height - 1; y >= 0; --y)
+        for (int x = 0; x < img.width; ++x) {
+            const float* p = img.px(x, y);
+            std::fwrite(p, sizeof(float), 3, f);
+        }
+    std::fclose(f);
+}
+
 void writePpm(const char* path, const Image& img) {
+    const std::string name(path);
+    if (name.size() > 4 && name.compare(name.size() - 4, 4, ".pfm") == 0) { writePfm(path, img); return; }
     FILE* f = std::fopen(path, "wb");
     if (!f) return;
     std::fprintf(f, "P6\n%d %d\n255\n", img.width, img.height);

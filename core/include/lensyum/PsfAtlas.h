@@ -45,11 +45,16 @@ public:
     int mipCount = 0;
     double extent = 1.75; // half size of the PSF frame in normalised units
     std::vector<double> defocusPx; // signed full-resolution blur radius of each entry, ascending
+    std::vector<float> unitMax;    // per defocus entry, the largest Mip::unit over the field
+    double maxReachPx = 0;         // largest footprint radius (px) any entry reaches, unit included
 
     // Lens figures for reporting and for depth -> blur conversion.
     double efl = 0, fNumber = 0, marginalSlope = 0, pxPerMm = 0;
 
-    struct Mip { int res; size_t offset; float maxU; };
+    // unit: how many geometric blur radii one normalised unit stands for. It is 1 unless the lens's own
+    // aberrations at this defocus are larger than the geometric blur (a PSF that would otherwise be
+    // cut off by the square texture frame); the renderer scales the footprint by it.
+    struct Mip { int res; size_t offset; float maxU; float unit; };
     // [field][defocus][mip]
     std::vector<Mip> mips;
     // kTexelFloats per texel: light in R, G, B, then pupil x and y multiplied by (R + G + B),

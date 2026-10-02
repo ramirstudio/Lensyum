@@ -133,7 +133,7 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
     for (size_t e = 0; e < entries; ++e) {
         size_t off = e * perEntry;
         for (int m = 0; m < A.mipCount; ++m) {
-            A.mips[e * A.mipCount + m] = {mipRes[m], off, 1.0f};
+            A.mips[e * A.mipCount + m] = {mipRes[m], off, 1.0f, 1.0f};
             off += static_cast<size_t>(mipRes[m]) * mipRes[m] * TF;
         }
     }
@@ -227,8 +227,40 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
             const double zx = L.sensorZ() + delta - split, zy = L.sensorZ() + delta + split;
             const double cx = chief.o.x + (zx - chief.o.z) * csx;
             const double cy = chief.o.y + (zy - chief.o.z) * csy;
-            const double inv = 1.0 / (k * std::fabs(delta));
             const double ad = std::fabs(delta);
+            // Where the geometric blur is smaller than the spot the lens's own aberrations make, the
+            // PSF would run past the texture frame and come out square. Widen the unit to fit it.
+            double inv = 1.0 / (k * ad);
+            float unit = 1.0f;
+            {
+                // Spread of the bundle about its own centre: a bundle that vignetting or a field beyond the
+                // image circle moved off the chief ray is not a bigger spot, and stays as it is.
+                std::vector<float> dxs, dys;
+                dxs.reserve(samples.size());
+                dys.reserve(samples.size());
+                double mx = 0, my = 0;
+                for (const RaySample& rs : samples) {
+                    const double px = rs.px + (zx - rs.pz) * rs.sx + ad * rs.ex + delta * rs.ix;
+                    const double py = rs.py + (zy - rs.pz) * rs.sy + ad * rs.ey + delta * rs.iy;
+                    dxs.push_back(static_cast<float>(px - cx));
+                    dys.push_back(static_cast<float>(py - cy));
+                    mx += dxs.back();
+                    my += dys.back();
+                }
+                if (!dxs.empty()) {
+                    mx /= dxs.size();
+                    my /= dxs.size();
+                    std::vector<float> rad(dxs.size());
+                    for (size_t i = 0; i < dxs.size(); ++i)
+                        rad[i] = static_cast<float>(std::max(std::fabs(dxs[i] - mx), std::fabs(dys[i] - my)) * inv); // frame is square
+                    // Only when the texture frame would cut off more than 2 % of the light is the geometric
+                    // blur smaller than the lens's spot. The far tail of stray rays does not count.
+                    const size_t nth = std::min(rad.size() - 1, static_cast<size_t>(rad.size() * 0.98));
+                    std::nth_element(rad.begin(), rad.begin() + nth, rad.end());
+                    if (rad[nth] > 0.97 * A.extent) unit = static_cast<float>(rad[nth] / (0.9 * A.extent));
+                }
+                inv /= unit;
+            }
             std::fill(img.begin(), img.end(), 0.0f);
             for (const RaySample& rs : samples) {
                 const double px = rs.px + (zx - rs.pz) * rs.sx + ad * rs.ex + delta * rs.ix;
@@ -261,6 +293,7 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
             PsfAtlas::Mip* mips = &A.mips[entry * A.mipCount];
             float* dst0 = A.texels.data() + mips[0].offset;
             for (size_t i = 0; i < img.size(); ++i) dst0[i] = img[i] * scale;
+            for (int m = 0; m < A.mipCount; ++m) mips[m].unit = unit;
             mips[0].maxU = maxRadius(dst0, res, A.extent);
             for (int m = 1; m < A.mipCount; ++m) {
                 const float* src = A.texels.data() + mips[m - 1].offset;
@@ -293,9 +326,18 @@ std::shared_ptr<const PsfAtlas> buildPsfAtlas(const OpticsSettings& s) {
                 std::copy(A.texels.begin() + ms.offset, A.texels.begin() + ms.offset + static_cast<size_t>(ms.res) * ms.res * TF,
                           A.texels.begin() + md.offset);
                 md.maxU = ms.maxU;
+                md.unit = ms.unit;
             }
         }
     }
+    A.unitMax.assign(A.defocusCount, 1.0f);
+    A.maxReachPx = 0;
+    for (int fi = 0; fi < A.fieldCount; ++fi)
+        for (int d = 0; d < A.defocusCount; ++d) {
+            const float u = A.mips[(static_cast<size_t>(fi) * A.defocusCount + d) * A.mipCount].unit;
+            A.unitMax[d] = std::max(A.unitMax[d], u);
+            A.maxReachPx = std::max(A.maxReachPx, std::fabs(A.defocusPx[d]) * u);
+        }
     return atlas;
 }
 

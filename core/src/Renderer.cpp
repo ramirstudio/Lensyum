@@ -33,7 +33,7 @@ struct Splat {
 };
 
 struct Agg {
-    float c[4], w, sw, xw, yw;
+    float c[4], w, sw, xw, yw, lw; // lw: weight of the energy-centred position
 };
 
 struct Source {
@@ -141,6 +141,13 @@ void cleanBlurField(std::vector<Source>& srcs, int W, int H, int k) {
             if (hit) srcs[static_cast<size_t>(y) * W + x].s = best;
         }
     });
+}
+
+// How much of an atlas entry's own PSF widening (Mip::unit) applies at a given blur radius: none
+// right at the focus plane, so sharp pixels stay sharp, all of it from a few pixels of blur on.
+inline double unitBlend(double radiusPx, double unit) {
+    const double t = clampv((radiusPx - 0.5) / 3.5, 0.0, 1.0);
+    return 1.0 + (unit - 1.0) * t * t * (3.0 - 2.0 * t);
 }
 
 struct LevelBuffer {
@@ -440,7 +447,14 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
     parallelFor(H, [&](int y) {
         for (int x = 0; x < W; ++x) {
             const Source& S = srcs[static_cast<size_t>(y) * W + x];
-            const double rBuf = std::fabs(S.s) * dsMax;
+            // Level from the footprint this pixel's own field entry will have (see unitBlend), found
+            // with the same field lookup the splat will use.
+            const double flx = (fm.originX + x + 0.5) / dsx, fly = (fm.originY + y + 0.5) / dsy;
+            const double fvx = (flx - fm.centerX) * par, fvy = fly - fm.centerY;
+            const double ffpos = std::min(std::hypot(fvx, fvy) / halfDiagFc, 1.0) * (A.fieldCount - 1);
+            int ffi = static_cast<int>(ffpos);
+            if (ffi < A.fieldCount - 1 && hashUnit(hash2(static_cast<int>((x + 0.5) / (16.0 * dsx)), static_cast<int>((y + 0.5) / (16.0 * dsy)), 0x51u)) < ffpos - ffi) ++ffi;
+            const double rBuf = std::fabs(S.s) * dsMax * unitBlend(std::fabs(S.s), A.mip(ffi, A.nearestDefocus(S.s), 0).unit);
             const double cap = S.highlight ? qp.levelCapHigh : qp.levelCap;
             int level = 0;
             if (rBuf > cap) level = std::min(kMaxLevel, static_cast<int>(std::ceil(std::log2(rBuf / cap))));
@@ -618,7 +632,7 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
         const int scaleL = 1 << L;
         const double ax = par * squeeze * scaleL / dsx; // level px -> full-res physical units
         const double ay = scaleL / dsy;
-        const double maxHy = 2.5 * maxR / ay + 2.0;
+        const double maxHy = 2.5 * std::max(static_cast<double>(maxR), A.maxReachPx) / ay + 2.0;
         const int bandH = 16;
         const int bands = (lb.h + bandH - 1) / bandH;
 
@@ -634,7 +648,9 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
                 const Splat& S = *it;
                 const double cxL = S.x / scaleL, cyL = S.y / scaleL;
                 const double R = std::fabs(S.s);
-                const double rBuf = R * dsMax / scaleL;
+                // Footprint size drives the level the splat was sorted into, so the in-focus shortcut
+                // below must see the same size, not the bare geometric blur.
+                const double rBuf = R * unitBlend(R, A.unitMax[A.nearestDefocus(S.s)]) * dsMax / scaleL;
 
                 if (rBuf < 0.5) {
                     // In focus (or tiny blur): deposit straight into the pixel.
@@ -653,11 +669,18 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
                 if (vl > 1e-9) { ex = vx / vl; ey = vy / vl; }
                 const double fpos = std::min(vl / halfDiag, 1.0) * (A.fieldCount - 1);
                 int fi = static_cast<int>(fpos);
-                if (fi < A.fieldCount - 1 && hashUnit(hash2(static_cast<int>(S.x * 4), static_cast<int>(S.y * 4), 0x51u)) < fpos - fi) ++fi;
+                // Dither between neighbouring field entries in cells of ~16 px, not per pixel: the pixels of one
+                // small light must agree on the entry, or its disc comes out as a union of slightly
+                // different ones with a lumpy outline.
+                if (fi < A.fieldCount - 1 &&
+                    hashUnit(hash2(static_cast<int>(S.x / (16.0 * dsx)), static_cast<int>(S.y / (16.0 * dsy)), 0x51u)) < fpos - fi) ++fi;
                 const int di = A.nearestDefocus(S.s);
+                // Radius the footprint really has: the lens's own aberrations can make the PSF larger
+                // than the geometric blur (see PsfAtlas, Mip::unit).
+                const double Re = R * unitBlend(R, A.mip(fi, di, 0).unit);
 
                 // Mip whose texel is about one output pixel.
-                const double texPx = 2.0 * U * R / (A.res * std::max(ax, ay));
+                const double texPx = 2.0 * U * Re / (A.res * std::max(ax, ay));
                 int m = 0;
                 while (m + 1 < A.mipCount && texPx * (1 << m) < 0.7) ++m;
                 const size_t mi = (static_cast<size_t>(fi) * A.defocusCount + di) * A.mipCount + m;
@@ -677,7 +700,7 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
                 const float* M = Mv;
                 const int res = mip.res;
                 const double du = 2.0 * U / res;
-                const double invR = 1.0 / R;
+                const double invR = 1.0 / Re;
 
                 auto deposit = [&]() {
                     // Nothing of this entry passes the iris: keep the energy as a point.
@@ -688,7 +711,7 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
                 };
                 if (M[1] <= 1e-12f) { deposit(); continue; }
 
-                const double hx = mip.maxU * R / ax, hy = mip.maxU * R / ay;
+                const double hx = mip.maxU * Re / ax, hy = mip.maxU * Re / ay;
                 // Full footprint (for normalisation) and its part inside the buffer (for writing).
                 const int ux0 = static_cast<int>(std::floor(cxL - hx)), ux1 = static_cast<int>(std::ceil(cxL + hx));
                 const int uy0 = static_cast<int>(std::floor(cyL - hy)), uy1 = static_cast<int>(std::ceil(cyL + hy));
@@ -807,7 +830,7 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
                 // and the splat count drops by 4^L.
                 const int lw = levels[L].w;
                 std::vector<Agg>& grid = aggGrid[L];
-                if (grid.empty()) grid.assign(static_cast<size_t>(lw) * levels[L].h, Agg{{0, 0, 0, 0}, 0, 0, 0, 0});
+                if (grid.empty()) grid.assign(static_cast<size_t>(lw) * levels[L].h, Agg{{0, 0, 0, 0}, 0, 0, 0, 0, 0});
                 touched.clear();
                 for (const Entry& e : entries) {
                     const Source& S = srcs[static_cast<size_t>(e.y) * W + e.x];
@@ -816,14 +839,18 @@ static void renderCore(const Image& srcIn, Image& dst, const RenderSettings& rsI
                     if (g.w == 0) touched.push_back(cell);
                     for (int c = 0; c < 4; ++c) g.c[c] += S.c[c] * e.w;
                     g.w += e.w; g.sw += S.s * e.w;
-                    g.xw += (e.x + 0.5f) * e.w; g.yw += (e.y + 0.5f) * e.w;
+                    // The splat sits where the block's light is, not at its geometric centre: a small
+                    // light inside a large block would otherwise be blurred about the wrong point, and
+                    // one that straddles two blocks would come out as two offset discs (a lumpy outline).
+                    const float pw = (luma(S.c) + 1e-4f) * e.w;
+                    g.xw += (e.x + 0.5f) * pw; g.yw += (e.y + 0.5f) * pw; g.lw += pw;
                 }
                 std::sort(touched.begin(), touched.end());
                 for (size_t cell : touched) {
                     Agg& g = grid[cell];
-                    const float inv = 1.0f / g.w;
-                    splats.push_back({g.xw * inv, g.yw * inv, {g.c[0], g.c[1], g.c[2], g.c[3]}, g.w, g.sw * inv});
-                    g = Agg{{0, 0, 0, 0}, 0, 0, 0, 0};
+                    const float inv = 1.0f / g.w, pinv = 1.0f / g.lw;
+                    splats.push_back({g.xw * pinv, g.yw * pinv, {g.c[0], g.c[1], g.c[2], g.c[3]}, g.w, g.sw * inv});
+                    g = Agg{{0, 0, 0, 0}, 0, 0, 0, 0, 0};
                 }
                 std::stable_sort(splats.begin(), splats.end(), [](const Splat& a, const Splat& b) { return a.y < b.y; });
             }
