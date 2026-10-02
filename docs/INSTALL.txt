@@ -13,6 +13,7 @@ The files must stay together in the same folder:
   onnxruntime_providers_shared.dll   ONNX Runtime
   DirectML.dll                       GPU acceleration for AI Depth
   lensyum_depth.onnx                 Depth Anything V2 Small model
+  licenses\                          licenses of the third-party components (keep it)
 
 Without the DLLs or the model the effect still works; only the "AI Depth (auto)"
 mode shows a solid red frame. The reason is written to

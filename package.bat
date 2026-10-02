@@ -35,10 +35,14 @@ copy /y README.md "%OUT%\" >nul
 copy /y THIRD_PARTY.md "%OUT%\" >nul
 copy /y LICENSE "%OUT%\LICENSE.txt" >nul
 copy /y docs\INSTALL.txt "%OUT%\" >nul
+mkdir "%OUT%\licenses"
+copy /y licenses\*.txt "%OUT%\licenses\" >nul
 
 set AI=1
 if exist "%ORT_DIR%\runtimes\win-x64\native\onnxruntime.dll" (
     copy /y "%ORT_DIR%\runtimes\win-x64\native\onnxruntime.dll" "%OUT%\lensyum_ort.dll" >nul
+    if exist "%ORT_DIR%\LICENSE" copy /y "%ORT_DIR%\LICENSE" "%OUT%\licenses\ONNXRUNTIME-LICENSE.txt" >nul
+    if exist "%ORT_DIR%\ThirdPartyNotices.txt" copy /y "%ORT_DIR%\ThirdPartyNotices.txt" "%OUT%\licenses\ONNXRUNTIME-ThirdPartyNotices.txt" >nul
     if exist "%ORT_DIR%\runtimes\win-x64\native\onnxruntime_providers_shared.dll" copy /y "%ORT_DIR%\runtimes\win-x64\native\onnxruntime_providers_shared.dll" "%OUT%\" >nul
 ) else (
     echo Warning: ONNX Runtime not found in %ORT_DIR%, AI Depth files not included.
@@ -46,6 +50,7 @@ if exist "%ORT_DIR%\runtimes\win-x64\native\onnxruntime.dll" (
 )
 if exist "%DML_DIR%\bin\x64-win\DirectML.dll" (
     copy /y "%DML_DIR%\bin\x64-win\DirectML.dll" "%OUT%\" >nul
+    for %%F in ("%DML_DIR%\LICENSE*" "%DML_DIR%\ThirdPartyNotices*") do if exist "%%~F" copy /y "%%~F" "%OUT%\licenses\DirectML-%%~nF.txt" >nul
 ) else if exist "%ORT_DIR%\runtimes\win-x64\native\DirectML.dll" (
     copy /y "%ORT_DIR%\runtimes\win-x64\native\DirectML.dll" "%OUT%\" >nul
 ) else (
@@ -60,6 +65,7 @@ if not exist "%OUT%\lensyum_depth.onnx" (
     )
 )
 
+if not exist "%OUT%\licenses\DirectML-*" echo Warning: no DirectML license file found in %DML_DIR%; copy it by hand to %OUT%\licenses\.
 powershell -NoProfile -Command "Compress-Archive -Path 'dist\Lensyum' -DestinationPath 'dist\Lensyum-1.0-win64.zip' -Force"
 if errorlevel 1 exit /b 1
 echo.
